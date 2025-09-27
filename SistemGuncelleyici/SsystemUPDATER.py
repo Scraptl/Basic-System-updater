@@ -1,8 +1,4 @@
-#!/usr/bin/env python3
-"""
-🚀 Evrensel Çapraz Platform Sistem Güncelleyici
-Windows, macOS ve Linux için tam destek
-"""
+
 
 import os
 import platform
@@ -554,11 +550,7 @@ if __name__ == "__main__":
     app = UniversalUpdaterApp()
     app.mainloop()
 
-#!/usr/bin/env python3
-"""
-🚀 Evrensel Çapraz Platform Sistem Güncelleyici
-Zamanlanmış Güncelleme Desteği ile
-"""
+
 
 import os
 import platform
@@ -1280,3 +1272,4 @@ if __name__ == "__main__":
     
     app = UniversalUpdaterApp()
     app.mainloop()
+
