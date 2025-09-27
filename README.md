@@ -112,7 +112,7 @@ Tüm işletim sistemleri için tek bir güncelleme aracı. Windows, macOS ve Lin
 
 üstten
 
-Add file --> upload files 
+CODE --> upload files to ZIP
 
 ile indirip .py dosyasını aç
 ---
