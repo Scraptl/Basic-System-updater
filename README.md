@@ -109,7 +109,13 @@ Tüm işletim sistemleri için tek bir güncelleme aracı. Windows, macOS ve Lin
 - 📱 Kullanıcı dostu arayüz
 
 ---nasıl indirilinir/how to download
-Add file-upload files ile indirip çalıştıraabilirsin
+
+üstten
+
+Add file --> upload files 
+
+ile indirip çalıştırabilirsin
+
 ---
 
 ## 📦 Kurulum / Installation
