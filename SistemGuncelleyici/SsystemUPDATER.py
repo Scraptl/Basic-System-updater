@@ -1273,3 +1273,796 @@ if __name__ == "__main__":
     app = UniversalUpdaterApp()
     app.mainloop()
 
+
+#!/usr/bin/env python3
+"""
+🚀 Evrensel Çapraz Platform Sistem Güncelleyici
+Gelişmiş Loglama ve Geçmiş Kaydı ile
+"""
+
+import os
+import platform
+import shutil
+import subprocess
+import threading
+import time
+from datetime import datetime, timedelta
+import customtkinter as ctk
+from tkinter import messagebox
+import sys
+import json
+import schedule
+import logging
+from logging.handlers import RotatingFileHandler
+import csv
+import sqlite3
+from typing import Dict, List, Optional, Any
+import gzip
+import hashlib
+
+# ---------- Gelişmiş Loglama Sistemi ----------
+class AdvancedLogger:
+    def __init__(self, log_dir="logs"):
+        self.log_dir = log_dir
+        self.setup_directories()
+        self.setup_logging()
+        
+    def setup_directories(self):
+        """Log dizinlerini oluştur"""
+        os.makedirs(self.log_dir, exist_ok=True)
+        os.makedirs(os.path.join(self.log_dir, "archives"), exist_ok=True)
+        
+    def setup_logging(self):
+        """Loglama sistemini kur"""
+        # Logger'ı oluştur
+        self.logger = logging.getLogger('SystemUpdater')
+        self.logger.setLevel(logging.INFO)
+        
+        # Format
+        formatter = logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        
+        # Dosya handler (dönen loglar)
+        log_file = os.path.join(self.log_dir, 'updater.log')
+        file_handler = RotatingFileHandler(
+            log_file, 
+            maxBytes=5*1024*1024,  # 5MB
+            backupCount=10,
+            encoding='utf-8'
+        )
+        file_handler.setFormatter(formatter)
+        
+        # Konsol handler
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        
+        # Handler'ları ekle
+        self.logger.addHandler(file_handler)
+        self.logger.addHandler(console_handler)
+        
+    def log_update_start(self, update_type="manual"):
+        """Güncelleme başlangıcını logla"""
+        self.logger.info(f"🔧 GÜNCELLEME BAŞLATILDI - Tip: {update_type}")
+        self.logger.info(f"🖥️  Sistem: {platform.system()} {platform.release()}")
+        self.logger.info(f"🐍 Python: {platform.python_version()}")
+        
+    def log_update_result(self, success_count, total_commands, details):
+        """Güncelleme sonucunu logla"""
+        success_rate = (success_count / total_commands) * 100 if total_commands > 0 else 0
+        self.logger.info(f"📊 GÜNCELLEME SONUCU - Başarı: {success_count}/{total_commands} (%{success_rate:.1f})")
+        
+        for detail in details:
+            if "✅" in detail:
+                self.logger.info(f"  {detail}")
+            elif "❌" in detail or "⚠️" in detail:
+                self.logger.warning(f"  {detail}")
+            else:
+                self.logger.info(f"  {detail}")
+                
+    def log_error(self, error_message, context=""):
+        """Hata logla"""
+        if context:
+            self.logger.error(f"❌ {context} - {error_message}")
+        else:
+            self.logger.error(f"❌ {error_message}")
+            
+    def log_warning(self, warning_message, context=""):
+        """Uyarı logla"""
+        if context:
+            self.logger.warning(f"⚠️ {context} - {warning_message}")
+        else:
+            self.logger.warning(f"⚠️ {warning_message}")
+            
+    def log_info(self, info_message, context=""):
+        """Bilgi logla"""
+        if context:
+            self.logger.info(f"ℹ️  {context} - {info_message}")
+        else:
+            self.logger.info(f"ℹ️  {info_message}")
+
+# ---------- Geçmiş Kaydı Sistemi ----------
+class UpdateHistoryManager:
+    def __init__(self, history_dir="history"):
+        self.history_dir = history_dir
+        self.setup_directories()
+        self.setup_database()
+        
+    def setup_directories(self):
+        """Geçmiş dizinlerini oluştur"""
+        os.makedirs(self.history_dir, exist_ok=True)
+        
+    def setup_database(self):
+        """SQLite veritabanını kur"""
+        self.db_path = os.path.join(self.history_dir, 'update_history.db')
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Ana güncelleme geçmişi tablosu
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS update_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                update_type TEXT NOT NULL,
+                success_count INTEGER NOT NULL,
+                total_commands INTEGER NOT NULL,
+                duration_seconds REAL NOT NULL,
+                system_info TEXT NOT NULL,
+                status TEXT NOT NULL
+            )
+        ''')
+        
+        # Detaylı komut geçmişi tablosu
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS command_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER,
+                command_name TEXT NOT NULL,
+                command_text TEXT NOT NULL,
+                status TEXT NOT NULL,
+                return_code INTEGER,
+                output TEXT,
+                error TEXT,
+                duration_seconds REAL,
+                timestamp TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES update_sessions (id)
+            )
+        ''')
+        
+        # Sistem istatistikleri tablosu
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS system_stats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                total_updates INTEGER DEFAULT 0,
+                successful_updates INTEGER DEFAULT 0,
+                total_commands INTEGER DEFAULT 0,
+                successful_commands INTEGER DEFAULT 0,
+                total_duration REAL DEFAULT 0
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+        
+    def start_update_session(self, update_type="manual") -> int:
+        """Yeni güncelleme oturumu başlat ve ID döndür"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        system_info = json.dumps({
+            'system': platform.system(),
+            'release': platform.release(),
+            'version': platform.version(),
+            'architecture': platform.architecture()[0],
+            'python_version': platform.python_version()
+        })
+        
+        cursor.execute('''
+            INSERT INTO update_sessions 
+            (timestamp, update_type, success_count, total_commands, duration_seconds, system_info, status)
+            VALUES (?, ?, 0, 0, 0, ?, 'running')
+        ''', (datetime.now().isoformat(), update_type, system_info))
+        
+        session_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return session_id
+        
+    def log_command_result(self, session_id: int, command_name: str, command_text: str, 
+                          status: str, return_code: int, output: str, error: str, 
+                          duration: float):
+        """Komut sonucunu kaydet"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO command_history 
+            (session_id, command_name, command_text, status, return_code, output, error, duration_seconds, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (session_id, command_name, command_text, status, return_code, 
+              output[:1000] if output else '', error[:1000] if error else '', 
+              duration, datetime.now().isoformat()))
+        
+        conn.commit()
+        conn.close()
+        
+    def complete_update_session(self, session_id: int, success_count: int, 
+                               total_commands: int, duration: float, status: str = "completed"):
+        """Güncelleme oturumunu tamamla"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE update_sessions 
+            SET success_count = ?, total_commands = ?, duration_seconds = ?, status = ?
+            WHERE id = ?
+        ''', (success_count, total_commands, duration, status, session_id))
+        
+        # İstatistikleri güncelle
+        self.update_statistics(success_count, total_commands, duration)
+        
+        conn.commit()
+        conn.close()
+        
+    def update_statistics(self, success_count: int, total_commands: int, duration: float):
+        """Sistem istatistiklerini güncelle"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        cursor.execute('''
+            SELECT * FROM system_stats WHERE date = ?
+        ''', (today,))
+        
+        existing = cursor.fetchone()
+        
+        if existing:
+            cursor.execute('''
+                UPDATE system_stats 
+                SET total_updates = total_updates + 1,
+                    successful_updates = successful_updates + ?,
+                    total_commands = total_commands + ?,
+                    successful_commands = successful_commands + ?,
+                    total_duration = total_duration + ?
+                WHERE date = ?
+            ''', (1 if success_count == total_commands else 0, total_commands, success_count, duration, today))
+        else:
+            cursor.execute('''
+                INSERT INTO system_stats 
+                (date, total_updates, successful_updates, total_commands, successful_commands, total_duration)
+                VALUES (?, 1, ?, ?, ?, ?)
+            ''', (today, 1 if success_count == total_commands else 0, total_commands, success_count, duration))
+        
+        conn.commit()
+        conn.close()
+        
+    def get_recent_sessions(self, limit: int = 10) -> List[Dict]:
+        """Son güncelleme oturumlarını getir"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM update_sessions 
+            ORDER BY timestamp DESC 
+            LIMIT ?
+        ''', (limit,))
+        
+        sessions = []
+        for row in cursor.fetchall():
+            sessions.append({
+                'id': row[0],
+                'timestamp': row[1],
+                'update_type': row[2],
+                'success_count': row[3],
+                'total_commands': row[4],
+                'duration_seconds': row[5],
+                'system_info': json.loads(row[6]),
+                'status': row[7]
+            })
+        
+        conn.close()
+        return sessions
+        
+    def get_session_details(self, session_id: int) -> Dict:
+        """Oturum detaylarını getir"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Oturum bilgisi
+        cursor.execute('SELECT * FROM update_sessions WHERE id = ?', (session_id,))
+        session_row = cursor.fetchone()
+        
+        if not session_row:
+            return None
+            
+        session_info = {
+            'id': session_row[0],
+            'timestamp': session_row[1],
+            'update_type': session_row[2],
+            'success_count': session_row[3],
+            'total_commands': session_row[4],
+            'duration_seconds': session_row[5],
+            'system_info': json.loads(session_row[6]),
+            'status': session_row[7]
+        }
+        
+        # Komut geçmişi
+        cursor.execute('''
+            SELECT * FROM command_history 
+            WHERE session_id = ? 
+            ORDER BY timestamp
+        ''', (session_id,))
+        
+        commands = []
+        for row in cursor.fetchall():
+            commands.append({
+                'id': row[0],
+                'command_name': row[2],
+                'command_text': row[3],
+                'status': row[4],
+                'return_code': row[5],
+                'output': row[6],
+                'error': row[7],
+                'duration_seconds': row[8],
+                'timestamp': row[9]
+            })
+        
+        session_info['commands'] = commands
+        conn.close()
+        return session_info
+        
+    def get_statistics(self, days: int = 30) -> Dict:
+        """İstatistikleri getir"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+        
+        cursor.execute('''
+            SELECT 
+                SUM(total_updates) as total_updates,
+                SUM(successful_updates) as successful_updates,
+                SUM(total_commands) as total_commands,
+                SUM(successful_commands) as successful_commands,
+                SUM(total_duration) as total_duration
+            FROM system_stats 
+            WHERE date >= ?
+        ''', (start_date,))
+        
+        result = cursor.fetchone()
+        
+        stats = {
+            'total_updates': result[0] or 0,
+            'successful_updates': result[1] or 0,
+            'total_commands': result[2] or 0,
+            'successful_commands': result[3] or 0,
+            'total_duration': result[4] or 0,
+            'success_rate_updates': (result[1] / result[0] * 100) if result[0] else 0,
+            'success_rate_commands': (result[3] / result[2] * 100) if result[2] else 0
+        }
+        
+        conn.close()
+        return stats
+
+# ---------- Geçmiş Görüntüleme Penceresi ----------
+class HistoryViewerWindow(ctk.CTkToplevel):
+    def __init__(self, parent, history_manager: UpdateHistoryManager):
+        super().__init__(parent)
+        self.history_manager = history_manager
+        
+        self.title("📊 Güncelleme Geçmişi")
+        self.geometry("800x600")
+        self.transient(parent)
+        self.grab_set()
+        
+        self.setup_ui()
+        self.load_history()
+        
+    def setup_ui(self):
+        # Sekmeler
+        self.tabview = ctk.CTkTabview(self)
+        self.tabview.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        self.tabview.add("📋 Son Güncellemeler")
+        self.tabview.add("📈 İstatistikler")
+        self.tabview.add("🔍 Detaylı Görünüm")
+        
+        self.setup_recent_tab()
+        self.setup_stats_tab()
+        self.setup_details_tab()
+        
+    def setup_recent_tab(self):
+        # Son güncellemeler listesi
+        frame = self.tabview.tab("📋 Son Güncellemeler")
+        
+        # Başlık
+        title_label = ctk.CTkLabel(frame, text="Son 10 Güncelleme", 
+                                  font=("Arial", 16, "bold"))
+        title_label.pack(pady=10)
+        
+        # Liste kutusu
+        self.session_listbox = ctk.CTkTextbox(frame, width=700, height=400)
+        self.session_listbox.pack(pady=10, fill="both", expand=True)
+        self.session_listbox.configure(state="disabled")
+        
+    def setup_stats_tab(self):
+        # İstatistikler
+        frame = self.tabview.tab("📈 İstatistikler")
+        
+        self.stats_text = ctk.CTkTextbox(frame, width=700, height=400)
+        self.stats_text.pack(pady=10, fill="both", expand=True)
+        self.stats_text.configure(state="disabled")
+        
+    def setup_details_tab(self):
+        # Detaylı görünüm
+        frame = self.tabview.tab("🔍 Detaylı Görünüm")
+        
+        # Seçim
+        selection_frame = ctk.CTkFrame(frame)
+        selection_frame.pack(fill="x", padx=10, pady=10)
+        
+        ctk.CTkLabel(selection_frame, text="Oturum ID:").pack(side="left", padx=5)
+        self.session_id_entry = ctk.CTkEntry(selection_frame, width=100)
+        self.session_id_entry.pack(side="left", padx=5)
+        
+        ctk.CTkButton(selection_frame, text="Yükle", 
+                     command=self.load_session_details).pack(side="left", padx=10)
+        
+        # Detaylar
+        self.details_text = ctk.CTkTextbox(frame, width=700, height=350)
+        self.details_text.pack(pady=10, fill="both", expand=True)
+        self.details_text.configure(state="disabled")
+        
+    def load_history(self):
+        """Geçmişi yükle"""
+        self.load_recent_sessions()
+        self.load_statistics()
+        
+    def load_recent_sessions(self):
+        """Son oturumları yükle"""
+        sessions = self.history_manager.get_recent_sessions(10)
+        
+        self.session_listbox.configure(state="normal")
+        self.session_listbox.delete("1.0", "end")
+        
+        if not sessions:
+            self.session_listbox.insert("end", "Henüz güncelleme geçmişi yok.\n")
+        else:
+            for session in sessions:
+                timestamp = datetime.fromisoformat(session['timestamp'])
+                success_rate = (session['success_count'] / session['total_commands'] * 100) if session['total_commands'] > 0 else 0
+                
+                self.session_listbox.insert("end", 
+                    f"📅 {timestamp.strftime('%d.%m.%Y %H:%M')}\n")
+                self.session_listbox.insert("end",
+                    f"   Type: {session['update_type']} | "
+                    f"Success: {session['success_count']}/{session['total_commands']} "
+                    f"(%{success_rate:.1f}) | "
+                    f"Duration: {session['duration_seconds']:.1f}s\n")
+                self.session_listbox.insert("end", f"   Status: {session['status']}\n\n")
+        
+        self.session_listbox.configure(state="disabled")
+        
+    def load_statistics(self):
+        """İstatistikleri yükle"""
+        stats = self.history_manager.get_statistics(30)
+        
+        self.stats_text.configure(state="normal")
+        self.stats_text.delete("1.0", "end")
+        
+        self.stats_text.insert("end", "📊 SON 30 GÜN İSTATİSTİKLERİ\n\n")
+        self.stats_text.insert("end", f"• Toplam Güncelleme: {stats['total_updates']}\n")
+        self.stats_text.insert("end", f"• Başarılı Güncelleme: {stats['successful_updates']}\n")
+        self.stats_text.insert("end", f"• Başarı Oranı: %{stats['success_rate_updates']:.1f}\n\n")
+        
+        self.stats_text.insert("end", f"• Toplam Komut: {stats['total_commands']}\n")
+        self.stats_text.insert("end", f"• Başarılı Komut: {stats['successful_commands']}\n")
+        self.stats_text.insert("end", f"• Başarı Oranı: %{stats['success_rate_commands']:.1f}\n\n")
+        
+        total_hours = stats['total_duration'] / 3600
+        self.stats_text.insert("end", f"• Toplam Süre: {total_hours:.2f} saat\n")
+        
+        self.stats_text.configure(state="disabled")
+        
+    def load_session_details(self):
+        """Oturum detaylarını yükle"""
+        try:
+            session_id = int(self.session_id_entry.get())
+            session_details = self.history_manager.get_session_details(session_id)
+            
+            if not session_details:
+                messagebox.showerror("Hata", "Oturum bulunamadı!")
+                return
+                
+            self.details_text.configure(state="normal")
+            self.details_text.delete("1.0", "end")
+            
+            timestamp = datetime.fromisoformat(session_details['timestamp'])
+            self.details_text.insert("end", f"📋 OTOURUM DETAYLARI - ID: {session_id}\n\n")
+            self.details_text.insert("end", f"Zaman: {timestamp.strftime('%d.%m.%Y %H:%M:%S')}\n")
+            self.details_text.insert("end", f"Tip: {session_details['update_type']}\n")
+            self.details_text.insert("end", f"Durum: {session_details['status']}\n\n")
+            
+            self.details_text.insert("end", "🔧 ÇALIŞTIRILAN KOMUTLAR:\n\n")
+            for cmd in session_details['commands']:
+                status_icon = "✅" if cmd['status'] == 'success' else "❌"
+                self.details_text.insert("end", 
+                    f"{status_icon} {cmd['command_name']} ({cmd['duration_seconds']:.1f}s)\n")
+                if cmd['error']:
+                    self.details_text.insert("end", f"   Hata: {cmd['error']}\n")
+                self.details_text.insert("end", "\n")
+            
+            self.details_text.configure(state="disabled")
+            
+        except ValueError:
+            messagebox.showerror("Hata", "Geçerli bir oturum ID'si girin!")
+        except Exception as e:
+            messagebox.showerror("Hata", f"Detaylar yüklenemedi: {e}")
+
+# ---------- Güncellenmiş Ana Uygulama ----------
+class UniversalUpdaterApp(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        
+        # Loglama ve geçmiş sistemleri
+        self.logger = AdvancedLogger()
+        self.history_manager = UpdateHistoryManager()
+        
+        # Platform ayarları
+        self.platform_info = self.get_platform_info()
+        
+        # GUI ayarları
+        ctk.set_appearance_mode("system")
+        ctk.set_default_color_theme("blue")
+        
+        self.title("🚀 Evrensel Sistem Güncelleyici")
+        self.geometry("500x500")
+        
+        # Paket yöneticisi
+        self.package_manager = CrossPlatformPackageManager()
+        
+        # Zamanlama yöneticisi (önceki koddan)
+        self.schedule_manager = ScheduledUpdateManager()
+        
+        self.setup_ui()
+        self.logger.log_info("Uygulama başlatıldı", "SystemUpdater")
+        
+    def get_platform_info(self):
+        """Platform bilgilerini getir"""
+        return {
+            'system': platform.system(),
+            'release': platform.release(),
+            'version': platform.version(),
+            'architecture': platform.architecture()[0],
+            'python_version': platform.python_version()
+        }
+        
+    def setup_ui(self):
+        # Başlık
+        title_label = ctk.CTkLabel(self, text="🚀 Sistem Güncelleyici", 
+                                  font=("Arial", 20, "bold"))
+        title_label.pack(pady=15)
+        
+        # Platform bilgisi
+        platform_label = ctk.CTkLabel(self, 
+                                     text=f"Platform: {self.platform_info['system']} {self.platform_info['release']}", 
+                                     font=("Arial", 12))
+        platform_label.pack(pady=5)
+        
+        # Progress bar
+        self.progress = ctk.CTkProgressBar(self, width=450, height=20)
+        self.progress.set(0)
+        self.progress.pack(pady=15)
+        
+        # Durum label
+        self.status_label = ctk.CTkLabel(self, text="Sistem hazır", 
+                                        font=("Arial", 14))
+        self.status_label.pack(pady=10)
+        
+        # Butonlar frame
+        button_frame = ctk.CTkFrame(self)
+        button_frame.pack(pady=10)
+        
+        # Güncelle butonu
+        self.update_btn = ctk.CTkButton(button_frame, text="🔄 Güncelle",
+                                       command=lambda: self.start_update(),
+                                       font=("Arial", 12),
+                                       width=100)
+        self.update_btn.pack(side="left", padx=5)
+        
+        # Geçmiş butonu
+        self.history_btn = ctk.CTkButton(button_frame, text="📊 Geçmiş",
+                                        command=self.show_history,
+                                        font=("Arial", 12),
+                                        width=100)
+        self.history_btn.pack(side="left", padx=5)
+        
+        # Zamanlama butonu
+        self.schedule_btn = ctk.CTkButton(button_frame, text="⏰ Zamanlama",
+                                         command=self.show_schedule_settings,
+                                         font=("Arial", 12),
+                                         width=100)
+        self.schedule_btn.pack(side="left", padx=5)
+        
+        # Çıktı alanı
+        self.output_text = ctk.CTkTextbox(self, width=460, height=180)
+        self.output_text.pack(pady=10, fill="x", padx=20)
+        self.output_text.insert("1.0", "Güncelleme detayları burada görünecek...\n")
+        self.output_text.configure(state="disabled")
+        
+        # Çıkış butonu
+        self.quit_btn = ctk.CTkButton(self, text="❌ Çıkış",
+                                     command=self.cleanup_and_exit,
+                                     fg_color="red",
+                                     font=("Arial", 12))
+        self.quit_btn.pack(pady=10)
+        
+    def show_history(self):
+        """Geçmiş penceresini aç"""
+        HistoryViewerWindow(self, self.history_manager)
+        
+    def start_update(self, update_type="manual"):
+        """Güncellemeyi başlat"""
+        start_time = time.time()
+        
+        # Loglama başlat
+        self.logger.log_update_start(update_type)
+        session_id = self.history_manager.start_update_session(update_type)
+        
+        self.progress.set(0)
+        self.status_label.configure(text="Güncelleme başlatılıyor...")
+        self.update_btn.configure(state="disabled")
+        
+        self.output_text.configure(state="normal")
+        self.output_text.delete("1.0", "end")
+        self.output_text.insert("end", f"🔧 Güncelleme başlatıldı... (ID: {session_id})\n")
+        self.output_text.configure(state="disabled")
+        
+        # Thread'de çalıştır
+        thread = threading.Thread(target=lambda: self.run_update_thread(session_id, start_time, update_type))
+        thread.daemon = True
+        thread.start()
+        
+    def run_update_thread(self, session_id: int, start_time: float, update_type: str):
+        """Güncelleme thread'i"""
+        managers = self.package_manager.get_available_managers()
+        
+        if not managers:
+            error_msg = "Paket yöneticisi bulunamadı"
+            self.logger.log_error(error_msg)
+            self.history_manager.complete_update_session(session_id, 0, 0, 0, "failed")
+            self.update_done(error_msg, [], session_id, start_time, update_type)
+            return
+        
+        total_commands = sum(len(mgr['commands']) for mgr in managers.values())
+        completed = 0
+        success_count = 0
+        details = []
+        
+        for manager_id, manager_info in managers.items():
+            for command in manager_info['commands']:
+                completed += 1
+                progress = (completed / total_commands) * 100
+                command_start_time = time.time()
+                
+                self.update_progress(progress, f"{manager_info['name']} - {command[0]}")
+                
+                try:
+                    result = subprocess.run(command, capture_output=True, text=True, timeout=300)
+                    command_duration = time.time() - command_start_time
+                    
+                    if result.returncode == 0:
+                        success_count += 1
+                        status = "success"
+                        details.append(f"✅ {manager_info['name']} - Başarılı")
+                    else:
+                        status = "failed"
+                        error_msg = result.stderr[:100] if result.stderr else "Bilinmeyen hata"
+                        details.append(f"❌ {manager_info['name']} - Hata: {error_msg}")
+                    
+                    # Komut sonucunu geçmişe kaydet
+                    self.history_manager.log_command_result(
+                        session_id, manager_info['name'], ' '.join(command),
+                        status, result.returncode, result.stdout, result.stderr,
+                        command_duration
+                    )
+                        
+                except Exception as e:
+                    command_duration = time.time() - command_start_time
+                    error_msg = str(e)
+                    details.append(f"⚠️ {manager_info['name']} - Hata: {error_msg}")
+                    
+                    self.history_manager.log_command_result(
+                        session_id, manager_info['name'], ' '.join(command),
+                        "error", -1, "", error_msg, command_duration
+                    )
+                
+                time.sleep(1)
+        
+        total_duration = time.time() - start_time
+        self.history_manager.complete_update_session(
+            session_id, success_count, total_commands, total_duration, "completed"
+        )
+        
+        summary = f"🎉 Güncelleme tamamlandı! {success_count}/{total_commands} başarılı"
+        self.logger.log_update_result(success_count, total_commands, details)
+        self.update_done(summary, details, session_id, start_time, update_type)
+    
+    def update_progress(self, percent, detail):
+        self.progress.set(percent / 100)
+        self.status_label.configure(text=f"Güncelleniyor... %{int(percent)}")
+        
+        self.output_text.configure(state="normal")
+        self.output_text.insert("end", f"⏳ {detail}\n")
+        self.output_text.see("end")
+        self.output_text.configure(state="disabled")
+    
+    def update_done(self, message, details, session_id, start_time, update_type):
+        total_duration = time.time() - start_time
+        
+        self.progress.set(1.0)
+        self.status_label.configure(text="Tamamlandı!")
+        self.update_btn.configure(state="normal")
+        
+        self.output_text.configure(state="normal")
+        self.output_text.insert("end", f"\n🎉 {message}\n")
+        self.output_text.insert("end", f"⏱️  Toplam süre: {total_duration:.1f}s\n")
+        for detail in details:
+            self.output_text.insert("end", f"• {detail}\n")
+        self.output_text.see("end")
+        self.output_text.configure(state="disabled")
+        
+        messagebox.showinfo("Güncelleme Tamamlandı", f"{message}\nSüre: {total_duration:.1f}s")
+    
+    def show_schedule_settings(self):
+        """Zamanlama ayarları (önceki koddan)"""
+        # Bu fonksiyon önceki zamanlama kodundan gelecek
+        pass
+        
+    def cleanup_and_exit(self):
+        """Temizlik yap ve çık"""
+        self.logger.log_info("Uygulama kapatılıyor", "SystemUpdater")
+        self.destroy()
+
+# ---------- Platform Tespiti (Önceki koddan) ----------
+class PlatformDetector:
+    @staticmethod
+    def get_platform_info():
+        system = platform.system().lower()
+        info = {
+            'system': system,
+            'release': platform.release(),
+            'version': platform.version(),
+            'architecture': platform.architecture()[0],
+            'processor': platform.processor(),
+            'python_version': platform.python_version()
+        }
+        
+        if system == 'linux':
+            info['distribution'] = PlatformDetector.get_linux_distro()
+        elif system == 'darwin':
+            info['distribution'] = PlatformDetector.get_macos_version()
+            
+        return info
+
+# ---------- Paket Yöneticisi (Önceki koddan) ----------
+class CrossPlatformPackageManager:
+    def get_available_managers(self):
+        # Önceki kodun aynısı
+        return {}
+
+# ---------- Zamanlama Yöneticisi (Önceki koddan) ----------
+class ScheduledUpdateManager:
+    def start_scheduler(self, callback):
+        # Önceki kodun aynısı
+        pass
+
+# ---------- Uygulamayı Başlat ----------
+if __name__ == "__main__":
+    app = UniversalUpdaterApp()
+    app.mainloop()
