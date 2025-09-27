@@ -159,3 +159,7 @@ pip install -r requirements.txt
 
 # Programı çalıştır / Run the program
 SystemUpdater.py -iki tane dosya göreceksiniz ikiside aynı işi yapıyor.
+
+How to download /Nasıl indirinilir
+
+<img width="851" height="660" alt="Ekran görüntüsü 2025-09-27 174048" src="https://github.com/user-attachments/assets/09778b7c-fc71-4cc5-8c5f-f67d814bbc57" />
