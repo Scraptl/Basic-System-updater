@@ -114,8 +114,7 @@ Tüm işletim sistemleri için tek bir güncelleme aracı. Windows, macOS ve Lin
 
 Add file --> upload files 
 
-ile indirip çalıştırabilirsin
-
+ile indirip .py dosyasını aç
 ---
 
 ## 📦 Kurulum / Installation
