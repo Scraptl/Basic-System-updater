@@ -105,15 +105,17 @@ Tüm işletim sistemleri için tek bir güncelleme aracı. Windows, macOS ve Lin
 
 ### 🖥️ Modern Arayüz / Modern GUI
 - 🎨 Koyuk/Açık tema desteği
-- 🔍 Detaylı sistem bilgileri
+- 🔍 Detaylı sistem bilgileri(no for now)
 - 📱 Kullanıcı dostu arayüz
 
+---nasıl indirilinir/how to download
+Add file-upload files ile indirip çalıştıraabilirsin
 ---
 
 ## 📦 Kurulum / Installation
 
 ### Yöntem 1: Python ile (Tüm Platformlar)
-# 🚀 Universal System Updater - Evrensel Sistem Güncelleyici
+# 🚀 Basic system updater -Basit Sistem Güncelleyici
 
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-green)
@@ -122,44 +124,3 @@ Tüm işletim sistemleri için tek bir güncelleme aracı. Windows, macOS ve Lin
 Tüm işletim sistemleri için tek bir güncelleme aracı. Windows, macOS ve Linux sistemlerde paket yöneticilerini otomatik olarak yönetir.
 
 **All-in-one update tool for all operating systems. Automatically manages package managers on Windows, macOS, and Linux systems.**
-
----
-
-## ✨ Özellikler / Features
-
-### 🔄 Çoklu Platform Desteği / Multi-Platform Support
-- **Windows**: winget, Chocolatey
-- **macOS**: Homebrew, Mac App Store
-- **Linux**: apt, dnf, pacman, snap, flatpak
-
-### 🎯 Akıllı Özellikler / Smart Features
-- ✅ Otomatik paket yöneticisi tespiti
-- 📊 Gerçek zamanlı ilerleme takibi
-- 🔔 Sistem bildirimleri
-- ⏰ Zamanlanmış güncellemeler
-- 📈 Detaylı raporlama
-
-### 🖥️ Modern Arayüz / Modern GUI
-- 🎨 Koyuk/Açık tema desteği
-- 🔍 Detaylı sistem bilgileri
-- 📱 Kullanıcı dostu arayüz
-
----
-
-## 📦 Kurulum / Installation
-
-### Yöntem 1: Python ile (Tüm Platformlar)
-```bash
-# Repoyu klonla / Clone the repository
-git clone https://github.com/kullaniciadi/universal-updater.git
-cd universal-updater
-
-# Gerekli kütüphaneleri yükle / Install required libraries
-pip install -r requirements.txt
-
-# Programı çalıştır / Run the program
-SystemUpdater.py -iki tane dosya göreceksiniz ikiside aynı işi yapıyor.
-
-How to download /Nasıl indirinilir
-
-<img width="851" height="660" alt="Ekran görüntüsü 2025-09-27 174048" src="https://github.com/user-attachments/assets/09778b7c-fc71-4cc5-8c5f-f67d814bbc57" />
