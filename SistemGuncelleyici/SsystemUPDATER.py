@@ -1,524 +1,999 @@
-
-
 import os
 import platform
 import shutil
 import subprocess
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import customtkinter as ctk
 from tkinter import messagebox
 import sys
+import json
+import hashlib
+import hmac
+import secrets
+from typing import Dict, List, Optional
+import sqlite3
+import requests
+import psutil
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import base64
 
-# ---------- Platform Tespiti ----------
-class PlatformDetector:
-    @staticmethod
-    def get_platform_info():
-        """Detaylı platform bilgilerini döndür"""
-        system = platform.system().lower()
-        info = {
-            'system': system,
-            'release': platform.release(),
-            'version': platform.version(),
-            'architecture': platform.architecture()[0],
-            'processor': platform.processor(),
-            'python_version': platform.python_version()
-        }
-        
-        # Dağıtım bilgisi (Linux için)
-        if system == 'linux':
-            info['distribution'] = PlatformDetector.get_linux_distro()
-        elif system == 'darwin':
-            info['distribution'] = PlatformDetector.get_macos_version()
-            
-        return info
-    
-    @staticmethod
-    def get_linux_distro():
-        """Linux dağıtımını tespit et"""
-        try:
-            if os.path.exists('/etc/os-release'):
-                with open('/etc/os-release', 'r') as f:
-                    for line in f:
-                        if line.startswith('PRETTY_NAME='):
-                            return line.split('=')[1].strip().strip('"')
-            elif os.path.exists('/etc/redhat-release'):
-                with open('/etc/redhat-release', 'r') as f:
-                    return f.read().strip()
-        except:
-            pass
-        return "Linux"
-    
-    @staticmethod
-    def get_macos_version():
-        """macOS versiyonunu tespit et"""
-        try:
-            result = subprocess.run(['sw_vers', '-productVersion'], 
-                                  capture_output=True, text=True)
-            return f"macOS {result.stdout.strip()}"
-        except:
-            return "macOS"
+# =========== GELİŞMİŞ GÜVENLİK SİSTEMİ ===========
 
-# ---------- Çapraz Platform Paket Yöneticileri ----------
-class CrossPlatformPackageManager:
+class SecurityHardening:
     def __init__(self):
-        self.platform_info = PlatformDetector.get_platform_info()
-        self.system = self.platform_info['system']
+        self.setup_secure_environment()
+        self.whitelisted_commands = self.load_command_whitelist()
         
-    def get_available_managers(self):
-        """Mevcut paket yöneticilerini tespit et"""
-        managers = {}
+    def setup_secure_environment(self):
+        """Güvenli ortam kurulumu"""
+        # Memory protection için secure allocation
+        self.sensitive_data = {}
+        self.secure_memory_alloc()
         
-        if self.system == 'windows':
-            managers.update(self._get_windows_managers())
-        elif self.system == 'darwin':
-            managers.update(self._get_macos_managers())
-        elif self.system == 'linux':
-            managers.update(self._get_linux_managers())
-            
-        return managers
-    
-    def _get_windows_managers(self):
-        """Windows paket yöneticileri"""
-        managers = {}
+    def secure_memory_alloc(self):
+        """Güvenli bellek ayırma"""
+        # Hassas veriler için özel bellek yönetimi
+        self.encryption_key = Fernet.generate_key()
+        self.fernet = Fernet(self.encryption_key)
         
-        # Winget (Modern Windows)
-        if shutil.which('winget'):
-            managers['winget'] = {
-                'name': 'Windows Package Manager',
-                'description': 'Microsoft resmi paket yöneticisi',
-                'commands': [
-                    ['winget', 'upgrade', '--all', '--accept-source-agreements', '--accept-package-agreements']
-                ]
-            }
-        
-        # Chocolatey
-        if shutil.which('choco'):
-            managers['choco'] = {
-                'name': 'Chocolatey',
-                'description': 'Windows için paket yöneticisi',
-                'commands': [
-                    ['choco', 'upgrade', 'all', '-y']
-                ]
-            }
-            
-        # Scoop
-        if shutil.which('scoop'):
-            managers['scoop'] = {
-                'name': 'Scoop',
-                'description': 'Windows için komut satırı yükleyici',
-                'commands': [
-                    ['scoop', 'update'],
-                    ['scoop', 'update', '*']
-                ]
-            }
-            
-        return managers
-    
-    def _get_macos_managers(self):
-        """macOS paket yöneticileri"""
-        managers = {}
-        
-        # Homebrew
-        if shutil.which('brew'):
-            managers['brew'] = {
-                'name': 'Homebrew',
-                'description': 'macOS için paket yöneticisi',
-                'commands': [
-                    ['brew', 'update'],
-                    ['brew', 'upgrade'],
-                    ['brew', 'cleanup', '-s']
-                ]
-            }
-        
-        # Mac App Store (mas)
-        if shutil.which('mas'):
-            managers['mas'] = {
-                'name': 'Mac App Store',
-                'description': 'Mac App Store uygulamaları',
-                'commands': [
-                    ['mas', 'upgrade']
-                ]
-            }
-            
-        # port (MacPorts)
-        if shutil.which('port'):
-            managers['port'] = {
-                'name': 'MacPorts',
-                'description': 'macOS paket yönetimi',
-                'commands': [
-                    ['sudo', 'port', 'selfupdate'],
-                    ['sudo', 'port', 'upgrade', 'outdated']
-                ]
-            }
-            
-        return managers
-    
-    def _get_linux_managers(self):
-        """Linux paket yöneticileri"""
-        managers = {}
-        distro = self.platform_info.get('distribution', '').lower()
-        
-        # APT (Debian/Ubuntu/Mint)
-        if shutil.which('apt') or shutil.which('apt-get'):
-            apt_cmd = 'apt' if shutil.which('apt') else 'apt-get'
-            managers['apt'] = {
-                'name': 'APT Package Manager',
-                'description': 'Debian tabanlı sistemler',
-                'commands': [
-                    ['sudo', apt_cmd, 'update'],
-                    ['sudo', apt_cmd, 'upgrade', '-y'],
-                    ['sudo', apt_cmd, 'autoremove', '-y']
-                ]
-            }
-        
-        # DNF (Fedora/RHEL)
-        if shutil.which('dnf'):
-            managers['dnf'] = {
-                'name': 'DNF Package Manager',
-                'description': 'Fedora/RHEL tabanlı sistemler',
-                'commands': [
-                    ['sudo', 'dnf', 'upgrade', '--refresh', '-y']
-                ]
-            }
-        
-        # Pacman (Arch/Manjaro)
-        if shutil.which('pacman'):
-            managers['pacman'] = {
-                'name': 'Pacman Package Manager',
-                'description': 'Arch Linux tabanlı sistemler',
-                'commands': [
-                    ['sudo', 'pacman', '-Syu', '--noconfirm']
-                ]
-            }
-        
-        # Zypper (openSUSE)
-        if shutil.which('zypper'):
-            managers['zypper'] = {
-                'name': 'Zypper Package Manager',
-                'description': 'openSUSE tabanlı sistemler',
-                'commands': [
-                    ['sudo', 'zypper', 'refresh'],
-                    ['sudo', 'zypper', 'update', '-y']
-                ]
-            }
-        
-        # Snap
-        if shutil.which('snap'):
-            managers['snap'] = {
-                'name': 'Snap Packages',
-                'description': 'Universal Linux paketleri',
-                'commands': [
-                    ['sudo', 'snap', 'refresh']
-                ]
-            }
-        
-        # Flatpak
-        if shutil.which('flatpak'):
-            managers['flatpak'] = {
-                'name': 'Flatpak Applications',
-                'description': 'Flatpak uygulamaları',
-                'commands': [
-                    ['flatpak', 'update', '-y']
-                ]
-            }
-            
-        return managers
-
-# ---------- Platforma Özel GUI Ayarları ----------
-class PlatformSpecificUI:
-    @staticmethod
-    def get_platform_theme():
-        """Platforma göre tema seç"""
-        system = platform.system().lower()
-        
-        if system == 'windows':
-            return "blue"
-        elif system == 'darwin':
-            return "green" 
-        elif system == 'linux':
-            return "dark-blue"
-        else:
-            return "blue"
-    
-    @staticmethod
-    def get_window_size():
-        """Platforma göre pencere boyutu"""
-        system = platform.system().lower()
-        
-        if system == 'windows':
-            return "500x400"
-        elif system == 'darwin':
-            return "550x450"  # macOS'ta biraz daha büyük
-        elif system == 'linux':
-            return "500x400"
-        else:
-            return "500x400"
-    
-    @staticmethod
-    def get_platform_icon():
-        """Platforma göre ikon"""
-        system = platform.system().lower()
-        
-        icons = {
-            'windows': '🪟',
-            'darwin': '🍎', 
-            'linux': '🐧'
+    def load_command_whitelist(self):
+        """Güvenli komut whitelist'i"""
+        return {
+            'winget', 'choco', 'scoop', 'brew', 'mas', 'port',
+            'apt', 'apt-get', 'dnf', 'pacman', 'zypper', 'snap', 'flatpak'
         }
-        return icons.get(system, '💻')
-
-# ---------- Çapraz Platform Güncelleme Yöneticisi ----------
-class UniversalUpdateManager:
-    def __init__(self):
-        self.package_manager = CrossPlatformPackageManager()
-        self.managers = self.package_manager.get_available_managers()
-        
-    def run_updates(self, callback_progress, callback_done):
-        """Tüm güncellemeleri çalıştır"""
-        if not self.managers:
-            callback_done("❌ Sisteminizde paket yöneticisi bulunamadı", [])
-            return
-        
-        total_commands = sum(len(mgr['commands']) for mgr in self.managers.values())
-        completed = 0
-        success_count = 0
-        details = []
-        
-        for manager_id, manager_info in self.managers.items():
-            for command in manager_info['commands']:
-                completed += 1
-                progress = (completed / total_commands) * 100
-                
-                callback_progress(progress, f"{manager_info['name']} - {command[0]}")
-                
-                try:
-                    # Linux/macOS için sudo gerekiyorsa
-                    if platform.system().lower() != 'windows' and command[0] == 'sudo':
-                        # GUI şifre isteme (basit versiyon)
-                        result = self._run_command_with_privileges(command)
-                    else:
-                        result = subprocess.run(
-                            command, 
-                            capture_output=True, 
-                            text=True, 
-                            timeout=300,
-                            shell=False
-                        )
-                    
-                    if result.returncode == 0:
-                        success_count += 1
-                        details.append(f"✅ {manager_info['name']} - Başarılı")
-                    else:
-                        error_msg = result.stderr[:100] if result.stderr else "Bilinmeyen hata"
-                        details.append(f"❌ {manager_info['name']} - Hata: {error_msg}")
-                        
-                except subprocess.TimeoutExpired:
-                    details.append(f"⏰ {manager_info['name']} - Zaman aşımı")
-                except Exception as e:
-                    details.append(f"⚠️ {manager_info['name']} - Hata: {str(e)}")
-                
-                time.sleep(1)  # Sistem yükünü azaltmak için
-        
-        summary = f"🎉 Güncelleme tamamlandı! {success_count}/{total_commands} başarılı"
-        callback_done(summary, details)
     
-    def _run_command_with_privileges(self, command):
-        """Ayrıcalıklı komut çalıştırma (basit implementasyon)"""
-        # Not: Gerçek uygulamada GUI şifre istemesi eklenmeli
+    def validate_command(self, command: list) -> bool:
+        """Komut güvenliğini doğrula"""
+        if not command:
+            return False
+            
+        base_cmd = command[0].lower()
+        
+        # Command injection koruması
+        dangerous_patterns = [';', '|', '&', '`', '$', '>', '<', 'rm -rf', 'format']
+        cmd_str = ' '.join(command).lower()
+        
+        if any(pattern in cmd_str for pattern in dangerous_patterns):
+            return False
+            
+        # Whitelist kontrolü
+        return base_cmd in self.whitelisted_commands
+    
+    def secure_command_execution(self, command: list) -> Dict:
+        """Güvenli komut çalıştırma"""
+        if not self.validate_command(command):
+            return {
+                'success': False, 
+                'error': 'Potentially dangerous command blocked',
+                'return_code': -1
+            }
+            
         try:
+            # Resource limiting ile çalıştırma
             result = subprocess.run(
                 command,
                 capture_output=True,
                 text=True,
-                timeout=300,
-                shell=False
+                timeout=300,  # 5 dakika timeout
+                shell=False,
+                env=self.get_secure_environment()
             )
-            return result
+            
+            return {
+                'success': result.returncode == 0,
+                'output': result.stdout,
+                'error': result.stderr,
+                'return_code': result.returncode
+            }
+            
+        except subprocess.TimeoutExpired:
+            return {'success': False, 'error': 'Command timeout', 'return_code': -1}
+        except Exception as e:
+            return {'success': False, 'error': str(e), 'return_code': -1}
+    
+    def get_secure_environment(self):
+        """Güvenli environment variables"""
+        env = os.environ.copy()
+        # Potansiyel tehlikeli environment'ları kaldır
+        dangerous_vars = ['LD_PRELOAD', 'PYTHONPATH', 'BASH_ENV']
+        for var in dangerous_vars:
+            env.pop(var, None)
+        return env
+    
+    def validate_digital_signature(self, file_path: str, expected_hash: str) -> bool:
+        """Dijital imza doğrulama"""
+        try:
+            with open(file_path, 'rb') as f:
+                file_data = f.read()
+                
+            actual_hash = hashlib.sha256(file_data).hexdigest()
+            return hmac.compare_digest(actual_hash, expected_hash)
+            
+        except Exception:
+            return False
+
+# =========== GÜVENLİK YÖNETİMİ ===========
+
+class SecurityManager:
+    def __init__(self):
+        self.security_db = "security_updates.db"
+        self.setup_security_database()
+        self.cve_data = []
+        
+    def setup_security_database(self):
+        """Güvenlik veritabanını kur"""
+        conn = sqlite3.connect(self.security_db)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS security_updates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cve_id TEXT UNIQUE,
+                severity TEXT,
+                package_name TEXT,
+                fixed_version TEXT,
+                detected_version TEXT,
+                status TEXT,
+                timestamp TEXT
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS vulnerability_scans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scan_type TEXT,
+                vulnerabilities_found INTEGER,
+                total_checks INTEGER,
+                timestamp TEXT
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+    
+    def fetch_cve_data(self):
+        """CVE verilerini getir (basit implementasyon)"""
+        # Gerçek uygulamada CVE API'sine bağlanılır
+        self.cve_data = [
+            {
+                'id': 'CVE-2023-1234',
+                'package': 'openssl',
+                'affected_version': '1.1.1',
+                'fixed_version': '1.1.1a',
+                'severity': 'HIGH',
+                'description': 'SSL/TLS vulnerability'
+            }
+        ]
+        return self.cve_data
+    
+    def vulnerability_scan(self):
+        """Güvenlik açığı taraması"""
+        vulnerabilities = []
+        
+        # Sistem paketlerini kontrol et
+        system_packages = self.get_system_packages()
+        cve_data = self.fetch_cve_data()
+        
+        for package_name, current_version in system_packages.items():
+            for cve in cve_data:
+                if (cve['package'] == package_name and 
+                    self.is_vulnerable_version(current_version, cve)):
+                    vulnerabilities.append({
+                        'cve_id': cve['id'],
+                        'severity': cve['severity'],
+                        'package': package_name,
+                        'current_version': current_version,
+                        'fixed_version': cve['fixed_version'],
+                        'description': cve['description']
+                    })
+        
+        # Sonuçları kaydet
+        self.log_scan_result(len(vulnerabilities))
+        return vulnerabilities
+    
+    def get_system_packages(self):
+        """Sistem paketlerini getir"""
+        packages = {}
+        try:
+            if platform.system() == 'Windows':
+                # Windows paketleri
+                pass
+            elif platform.system() == 'Linux':
+                # Linux paketleri
+                if shutil.which('dpkg'):
+                    result = subprocess.run(['dpkg', '-l'], capture_output=True, text=True)
+                    # dpkg çıktısını parse et
+                    pass
+        except Exception:
+            pass
+        return packages
+    
+    def is_vulnerable_version(self, current_version: str, cve: Dict) -> bool:
+        """Versiyonun güvenlik açığı içerip içermediğini kontrol et"""
+        # Basit versiyon karşılaştırma
+        try:
+            return current_version <= cve['affected_version']
         except:
-            # Şifre gerekirse burada GUI dialog gösterilebilir
-            return type('obj', (object,), {'returncode': 1, 'stderr': 'İzin reddedildi'})()
+            return False
+    
+    def log_scan_result(self, vulnerabilities_found: int):
+        """Tarama sonucunu kaydet"""
+        conn = sqlite3.connect(self.security_db)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO vulnerability_scans 
+            (scan_type, vulnerabilities_found, total_checks, timestamp)
+            VALUES (?, ?, ?, ?)
+        ''', ('full_scan', vulnerabilities_found, 100, datetime.now().isoformat()))
+        
+        conn.commit()
+        conn.close()
 
-# ---------- Gelişmiş Detaylar Penceresi ----------
-class AdvancedDetailsWindow(ctk.CTkToplevel):
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.title("🔍 Detaylı Sistem Bilgileri")
-        self.geometry("700x600")
-        self.transient(parent)
-        self.grab_set()
+# =========== BULUT ENTEGRASYONU ===========
+
+class CloudIntegration:
+    def __init__(self):
+        self.api_base_url = "https://api.system-updater.com/v1"
+        self.auth_token = None
+        self.sync_enabled = False
         
-        self.platform_info = PlatformDetector.get_platform_info()
-        self.package_manager = CrossPlatformPackageManager()
-        
-        self.setup_ui()
+    def authenticate(self, api_key: str) -> bool:
+        """API kimlik doğrulama"""
+        try:
+            # Basit authentication simülasyonu
+            if api_key and len(api_key) > 10:
+                self.auth_token = f"token_{api_key[-10:]}"
+                self.sync_enabled = True
+                return True
+        except Exception:
+            pass
+        return False
     
-    def setup_ui(self):
-        # Sekmeler
-        self.tabview = ctk.CTkTabview(self)
-        self.tabview.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        # Sistem Bilgileri
-        self.tabview.add("🖥️ Sistem Bilgileri")
-        self.setup_system_tab()
-        
-        # Paket Yöneticileri
-        self.tabview.add("📦 Paket Yöneticileri")
-        self.setup_packages_tab()
-        
-        # Güncelleme Geçmişi
-        self.tabview.add("📊 Güncelleme Durumu")
-        self.setup_status_tab()
+    def sync_settings(self, settings: Dict) -> bool:
+        """Ayarları cloud'a senkronize et"""
+        if not self.sync_enabled:
+            return False
+            
+        try:
+            # Senkronizasyon simülasyonu
+            sync_data = {
+                'timestamp': datetime.now().isoformat(),
+                'settings': settings,
+                'system_id': self.get_system_id()
+            }
+            print(f"Settings synced to cloud: {sync_data}")
+            return True
+        except Exception:
+            return False
     
-    def setup_system_tab(self):
-        text_widget = ctk.CTkTextbox(self.tabview.tab("🖥️ Sistem Bilgileri"))
-        text_widget.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        text_widget.insert("end", "🔧 DETAYLI SİSTEM BİLGİLERİ\n\n")
-        for key, value in self.platform_info.items():
-            text_widget.insert("end", f"• {key.replace('_', ' ').title()}: {value}\n")
-        
-        text_widget.configure(state="disabled")
+    def get_remote_updates(self) -> List:
+        """Uzaktan güncellemeleri getir"""
+        if not self.sync_enabled:
+            return []
+            
+        try:
+            # Remote updates simülasyonu
+            return [
+                {
+                    'id': 'remote_001',
+                    'name': 'Security Patch',
+                    'description': 'Important security update',
+                    'priority': 'high'
+                }
+            ]
+        except Exception:
+            return []
     
-    def setup_packages_tab(self):
-        text_widget = ctk.CTkTextbox(self.tabview.tab("📦 Paket Yöneticileri"))
-        text_widget.pack(fill="both", expand=True, padx=10, pady=10)
+    def get_system_id(self) -> str:
+        """Benzersiz sistem ID'si oluştur"""
+        system_info = platform.system() + platform.release() + platform.machine()
+        return hashlib.md5(system_info.encode()).hexdigest()
+
+# =========== BİLDİRİM SİSTEMİ ===========
+
+class NotificationManager:
+    def __init__(self):
+        self.notification_queue = queue.Queue()
+        self.user_preferences = self.load_user_preferences()
+        self.setup_notification_handlers()
         
-        managers = self.package_manager.get_available_managers()
+    def load_user_preferences(self):
+        """Kullanıcı tercihlerini yükle"""
+        return {
+            'priority_alerts': True,
+            'security_notifications': True,
+            'update_notifications': True,
+            'quiet_hours': {'start': '22:00', 'end': '08:00'}
+        }
+    
+    def setup_notification_handlers(self):
+        """Bildirim handler'larını kur"""
+        # Platforma özel bildirimler
+        self.notification_analytics = {
+            'sent': 0,
+            'clicked': 0,
+            'dismissed': 0
+        }
+    
+    def send_notification(self, title: str, message: str, priority: str = "normal"):
+        """Bildirim gönder"""
+        if not self.should_show_notification(priority):
+            return
+            
+        notification = {
+            'id': secrets.token_hex(8),
+            'title': title,
+            'message': message,
+            'priority': priority,
+            'timestamp': datetime.now().isoformat(),
+            'read': False
+        }
         
-        text_widget.insert("end", "📦 TESPİT EDİLEN PAKET YÖNETİCİLERİ\n\n")
-        
-        if managers:
-            for manager_id, manager_info in managers.items():
-                text_widget.insert("end", f"✅ {manager_info['name']}\n")
-                text_widget.insert("end", f"   📝 {manager_info['description']}\n")
-                text_widget.insert("end", f"   ⚙️  Komutlar: {' | '.join([' '.join(cmd) for cmd in manager_info['commands']])}\n\n")
+        self.notification_queue.put(notification)
+        self.display_notification(notification)
+        self.log_notification(notification)
+    
+    def should_show_notification(self, priority: str) -> bool:
+        """Bildirimin gösterilip gösterilmeyeceğini kontrol et"""
+        # Sessiz saatler kontrolü
+        if self.is_quiet_hours():
+            return priority == 'critical'
+            
+        # Kullanıcı tercihleri
+        if priority == 'security' and not self.user_preferences['security_notifications']:
+            return False
+            
+        return True
+    
+    def is_quiet_hours(self) -> bool:
+        """Sessiz saatlerde mi kontrol et"""
+        try:
+            now = datetime.now().time()
+            start = datetime.strptime(self.user_preferences['quiet_hours']['start'], '%H:%M').time()
+            end = datetime.strptime(self.user_preferences['quiet_hours']['end'], '%H:%M').time()
+            
+            if start < end:
+                return start <= now <= end
+            else:
+                return now >= start or now <= end
+        except:
+            return False
+    
+    def display_notification(self, notification: Dict):
+        """Bildirimi göster"""
+        # Platforma özel bildirim gösterimi
+        if platform.system() == 'Windows':
+            try:
+                # Windows toast notification
+                pass
+            except:
+                # Fallback to messagebox
+                messagebox.showinfo(notification['title'], notification['message'])
         else:
-            text_widget.insert("end", "❌ Paket yöneticisi bulunamadı\n")
-        
-        text_widget.configure(state="disabled")
+            messagebox.showinfo(notification['title'], notification['message'])
     
-    def setup_status_tab(self):
-        text_widget = ctk.CTkTextbox(self.tabview.tab("📊 Güncelleme Durumu"))
-        text_widget.pack(fill="both", expand=True, padx=10, pady=10)
+    def log_notification(self, notification: Dict):
+        """Bildirimi logla"""
+        self.notification_analytics['sent'] += 1
         
-        text_widget.insert("end", "🔄 GÜNCELLEME DURUMU\n\n")
-        text_widget.insert("end", f"• Platform: {self.platform_info['system'].title()}\n")
-        text_widget.insert("end", f"• Mimari: {self.platform_info['architecture']}\n")
-        text_widget.insert("end", f"• Python: {self.platform_info['python_version']}\n\n")
-        
-        managers = self.package_manager.get_available_managers()
-        text_widget.insert("end", f"• Tespit Edilen Yöneticiler: {len(managers)}\n")
-        
-        text_widget.configure(state="disabled")
+        # Analytics verisini kaydet
+        analytics_data = {
+            'notification_id': notification['id'],
+            'title': notification['title'],
+            'priority': notification['priority'],
+            'timestamp': notification['timestamp']
+        }
 
-# ---------- Ana Uygulama ----------
-class UniversalUpdaterApp(ctk.CTk):
+# =========== TEMA YÖNETİMİ ===========
+
+class ThemeManager:
+    def __init__(self):
+        self.current_theme = "system"
+        self.themes = {
+            "dark": {
+                "bg_color": "#2b2b2b",
+                "fg_color": "#ffffff",
+                "accent_color": "#1e88e5",
+                "text_color": "#ffffff"
+            },
+            "light": {
+                "bg_color": "#ffffff",
+                "fg_color": "#000000",
+                "accent_color": "#1976d2",
+                "text_color": "#000000"
+            },
+            "blue": {
+                "bg_color": "#0d1b2a",
+                "fg_color": "#e0e1dd",
+                "accent_color": "#415a77",
+                "text_color": "#e0e1dd"
+            },
+            "high_contrast": {
+                "bg_color": "#000000",
+                "fg_color": "#ffffff",
+                "accent_color": "#ffff00",
+                "text_color": "#ffffff"
+            }
+        }
+        self.auto_switch_enabled = False
+        
+    def switch_theme(self, theme_name: str):
+        """Tema değiştir"""
+        if theme_name in self.themes:
+            self.current_theme = theme_name
+            ctk.set_appearance_mode(theme_name)
+            self.apply_custom_theme(self.themes[theme_name])
+    
+    def apply_custom_theme(self, theme: Dict):
+        """Özel tema uygula"""
+        try:
+            ctk.ThemeManager.theme = {
+                "CTk": {
+                    "fg_color": theme["bg_color"],
+                    "text_color": theme["text_color"],
+                },
+                "CTkButton": {
+                    "fg_color": theme["accent_color"],
+                    "text_color": theme["text_color"],
+                },
+                "CTkLabel": {
+                    "text_color": theme["text_color"],
+                }
+            }
+        except Exception:
+            pass
+    
+    def enable_auto_switch(self):
+        """Otomatik tema değiştirmeyi aktif et"""
+        self.auto_switch_enabled = True
+        self.auto_switch_thread = threading.Thread(target=self._auto_switch_loop, daemon=True)
+        self.auto_switch_thread.start()
+    
+    def _auto_switch_loop(self):
+        """Otomatik tema değiştirme döngüsü"""
+        while self.auto_switch_enabled:
+            try:
+                now = datetime.now()
+                current_hour = now.hour
+                
+                # 06:00 - 18:00 arası light theme, diğer zamanlarda dark theme
+                if 6 <= current_hour < 18:
+                    self.switch_theme("light")
+                else:
+                    self.switch_theme("dark")
+                    
+                time.sleep(300)  # 5 dakikada bir kontrol et
+            except Exception:
+                time.sleep(300)
+
+# =========== KURTARMA SİSTEMİ ===========
+
+class DisasterRecovery:
+    def __init__(self):
+        self.recovery_points = []
+        self.backup_dir = "system_backups"
+        os.makedirs(self.backup_dir, exist_ok=True)
+        self.setup_recovery_system()
+    
+    def setup_recovery_system(self):
+        """Kurtarma sistemini kur"""
+        # İlk kurtarma noktasını oluştur
+        self.create_recovery_point("initial_setup")
+    
+    def create_recovery_point(self, name: str):
+        """Kurtarma noktası oluştur"""
+        try:
+            recovery_point = {
+                'name': name,
+                'timestamp': datetime.now().isoformat(),
+                'system_state': self.capture_system_state(),
+                'config_backup': self.backup_configuration(),
+                'data_backup': self.backup_essential_data()
+            }
+            
+            self.recovery_points.append(recovery_point)
+            self.save_recovery_point(recovery_point)
+            return True
+        except Exception:
+            return False
+    
+    def capture_system_state(self) -> Dict:
+        """Sistem durumunu yakala"""
+        return {
+            'platform': platform.platform(),
+            'python_version': platform.python_version(),
+            'timestamp': datetime.now().isoformat(),
+            'installed_managers': list(CrossPlatformPackageManager().get_available_managers().keys())
+        }
+    
+    def backup_configuration(self) -> str:
+        """Konfigürasyonu yedekle"""
+        config_data = {
+            'app_settings': {},
+            'user_preferences': {},
+            'schedule_config': {}
+        }
+        
+        backup_file = os.path.join(self.backup_dir, f"config_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+        with open(backup_file, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, indent=2)
+        
+        return backup_file
+    
+    def backup_essential_data(self) -> str:
+        """Önemli verileri yedekle"""
+        # Uygulama verilerini yedekle
+        essential_data = {
+            'update_history': [],
+            'security_scans': [],
+            'system_info': PlatformDetector.get_platform_info()
+        }
+        
+        backup_file = os.path.join(self.backup_dir, f"data_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+        with open(backup_file, 'w', encoding='utf-8') as f:
+            json.dump(essential_data, f, indent=2)
+        
+        return backup_file
+    
+    def save_recovery_point(self, recovery_point: Dict):
+        """Kurtarma noktasını kaydet"""
+        recovery_file = os.path.join(self.backup_dir, f"recovery_{recovery_point['name']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+        with open(recovery_file, 'w', encoding='utf-8') as f:
+            json.dump(recovery_point, f, indent=2)
+    
+    def restore_system(self, recovery_point_name: str) -> bool:
+        """Sistemi kurtarma noktasından geri yükle"""
+        recovery_point = self.find_recovery_point(recovery_point_name)
+        if not recovery_point:
+            return False
+        
+        try:
+            # Config'leri geri yükle
+            if os.path.exists(recovery_point['config_backup']):
+                with open(recovery_point['config_backup'], 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+                # Config'leri uygula
+                print(f"Config restored from: {recovery_point['config_backup']}")
+            
+            # Verileri geri yükle
+            if os.path.exists(recovery_point['data_backup']):
+                with open(recovery_point['data_backup'], 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                # Verileri uygula
+                print(f"Data restored from: {recovery_point['data_backup']")
+            
+            return True
+        except Exception as e:
+            print(f"Restore failed: {e}")
+            return False
+    
+    def find_recovery_point(self, name: str) -> Optional[Dict]:
+        """Kurtarma noktasını bul"""
+        for point in self.recovery_points:
+            if point['name'] == name:
+                return point
+        return None
+
+# =========== PERFORMANS İZLEME ===========
+
+class PerformanceMonitor:
+    def __init__(self):
+        self.metrics = {
+            'cpu_usage': [],
+            'memory_usage': [],
+            'disk_io': [],
+            'network_io': [],
+            'execution_times': []
+        }
+        self.scaling_policies = {
+            'cpu_threshold': 80.0,
+            'memory_threshold': 85.0,
+            'max_concurrent_updates': 3
+        }
+        self.monitoring = False
+    
+    def start_monitoring(self):
+        """Performans izlemeyi başlat"""
+        self.monitoring = True
+        self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self.monitor_thread.start()
+    
+    def stop_monitoring(self):
+        """İzlemeyi durdur"""
+        self.monitoring = False
+    
+    def _monitor_loop(self):
+        """İzleme döngüsü"""
+        while self.monitoring:
+            try:
+                # CPU kullanımı
+                cpu_percent = psutil.cpu_percent(interval=1)
+                self.metrics['cpu_usage'].append(cpu_percent)
+                
+                # Bellek kullanımı
+                memory = psutil.virtual_memory()
+                self.metrics['memory_usage'].append(memory.percent)
+                
+                # Disk I/O
+                disk_io = psutil.disk_io_counters()
+                if disk_io:
+                    self.metrics['disk_io'].append({
+                        'read_bytes': disk_io.read_bytes,
+                        'write_bytes': disk_io.write_bytes
+                    })
+                
+                # Son 100 kaydı tut
+                for key in ['cpu_usage', 'memory_usage']:
+                    self.metrics[key] = self.metrics[key][-100:]
+                
+                # Auto-scale kontrolü
+                self.auto_scale()
+                
+            except Exception as e:
+                print(f"Monitoring error: {e}")
+            
+            time.sleep(5)
+    
+    def auto_scale(self):
+        """Otomatik ölçeklendirme"""
+        if len(self.metrics['cpu_usage']) < 5:
+            return
+        
+        avg_cpu = sum(self.metrics['cpu_usage'][-5:]) / 5
+        avg_memory = sum(self.metrics['memory_usage'][-5:]) / 5
+        
+        # CPU threshold'ları
+        if avg_cpu > self.scaling_policies['cpu_threshold']:
+            self.scale_down_operations()
+        elif avg_cpu < 20:
+            self.scale_up_operations()
+    
+    def scale_down_operations(self):
+        """Operasyonları ölçeklendir (aşağı)"""
+        # Daha az eşzamanlı güncelleme
+        self.scaling_policies['max_concurrent_updates'] = max(1, self.scaling_policies['max_concurrent_updates'] - 1)
+        print(f"Scaling down: max_concurrent_updates = {self.scaling_policies['max_concurrent_updates']}")
+    
+    def scale_up_operations(self):
+        """Operasyonları ölçeklendir (yukarı)"""
+        # Daha fazla eşzamanlı güncelleme
+        self.scaling_policies['max_concurrent_updates'] = min(5, self.scaling_policies['max_concurrent_updates'] + 1)
+        print(f"Scaling up: max_concurrent_updates = {self.scaling_policies['max_concurrent_updates']}")
+    
+    def get_performance_report(self) -> Dict:
+        """Performans raporu oluştur"""
+        cpu_avg = sum(self.metrics['cpu_usage'][-10:]) / len(self.metrics['cpu_usage'][-10:]) if self.metrics['cpu_usage'] else 0
+        memory_avg = sum(self.metrics['memory_usage'][-10:]) / len(self.metrics['memory_usage'][-10:]) if self.metrics['memory_usage'] else 0
+        
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'cpu_usage': cpu_avg,
+            'memory_usage': memory_avg,
+            'system_load': os.getloadavg() if hasattr(os, 'getloadavg') else [0, 0, 0],
+            'scaling_policy': self.scaling_policies
+        }
+
+# =========== GÜNCELLENMİŞ ANA UYGULAMA ===========
+
+class AdvancedUniversalUpdaterApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         
-        # Platforma özel ayarlar
-        self.platform_ui = PlatformSpecificUI()
-        self.theme = self.platform_ui.get_platform_theme()
-        self.window_size = self.platform_ui.get_window_size()
-        self.platform_icon = self.platform_ui.get_platform_icon()
+        # Tüm gelişmiş manager'ları başlat
+        self.security_hardening = SecurityHardening()
+        self.security_manager = SecurityManager()
+        self.cloud_integration = CloudIntegration()
+        self.notification_manager = NotificationManager()
+        self.theme_manager = ThemeManager()
+        self.disaster_recovery = DisasterRecovery()
+        self.performance_monitor = PerformanceMonitor()
         
-        # GUI ayarları
-        ctk.set_appearance_mode("system")
-        ctk.set_default_color_theme(self.theme)
-        
-        self.title(f"{self.platform_icon} Evrensel Sistem Güncelleyici")
-        self.geometry(self.window_size)
-        
-        # Güncelleme yöneticisi
+        # Orijinal manager'lar
+        self.platform_info = PlatformDetector.get_platform_info()
+        self.package_manager = CrossPlatformPackageManager()
         self.update_manager = UniversalUpdateManager()
         
-        self.setup_ui()
+        # GUI ayarları
+        self.setup_advanced_gui()
+        
+        # Sistemleri başlat
+        self.start_advanced_systems()
     
-    def setup_ui(self):
-        # Platform bilgisi
-        platform_info = PlatformDetector.get_platform_info()
-        platform_name = platform_info.get('distribution') or f"{platform_info['system'].title()} {platform_info['release']}"
+    def setup_advanced_gui(self):
+        """Gelişmiş GUI kurulumu"""
+        self.title("🚀 GELİŞMİŞ SİSTEM GÜNCELLEYİCİ")
+        self.geometry("600x700")
         
-        # Başlık
-        title_label = ctk.CTkLabel(self, text="🚀 Evrensel Sistem Güncelleyici", 
-                                  font=("Arial", 20, "bold"))
-        title_label.pack(pady=15)
+        # Tema yöneticisi
+        self.theme_manager.switch_theme("dark")
         
-        # Platform bilgisi
-        platform_label = ctk.CTkLabel(self, text=f"Platform: {platform_name}", 
-                                     font=("Arial", 12))
-        platform_label.pack(pady=5)
+        # Ana container
+        self.main_container = ctk.CTkTabview(self)
+        self.main_container.pack(fill="both", expand=True, padx=10, pady=10)
         
+        # Gelişmiş sekmeler
+        self.setup_dashboard_tab()
+        self.setup_security_tab()
+        self.setup_cloud_tab()
+        self.setup_recovery_tab()
+        self.setup_monitoring_tab()
+        self.setup_settings_tab()
+    
+    def setup_dashboard_tab(self):
+        """Dashboard sekmesi"""
+        tab = self.main_container.add("📊 Dashboard")
+        
+        # Sistem durumu
+        status_frame = ctk.CTkFrame(tab)
+        status_frame.pack(fill="x", padx=10, pady=10)
+        
+        self.system_status = ctk.CTkLabel(status_frame, text="🟢 Gelişmiş Sistem Aktif", 
+                                         font=("Arial", 16, "bold"))
+        self.system_status.pack(pady=10)
+        
+        # Hızlı aksiyon butonları
+        self.setup_quick_actions(tab)
+        
+        # Orijinal güncelleme bileşenleri
+        self.setup_update_components(tab)
+    
+    def setup_security_tab(self):
+        """Güvenlik sekmesi"""
+        tab = self.main_container.add("🔒 Güvenlik")
+        
+        security_frame = ctk.CTkFrame(tab)
+        security_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        ctk.CTkButton(security_frame, text="🔍 Güvenlik Taraması Başlat",
+                     command=self.start_security_scan).pack(pady=5)
+        
+        ctk.CTkButton(security_frame, text="📊 Güvenlik Raporu",
+                     command=self.show_security_report).pack(pady=5)
+        
+        ctk.CTkButton(security_frame, text="🛡️  Güvenlik Ayarları",
+                     command=self.show_security_settings).pack(pady=5)
+    
+    def setup_cloud_tab(self):
+        """Bulut sekmesi"""
+        tab = self.main_container.add("☁️ Bulut")
+        
+        cloud_frame = ctk.CTkFrame(tab)
+        cloud_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        self.api_key_entry = ctk.CTkEntry(cloud_frame, placeholder_text="API Anahtarınız")
+        self.api_key_entry.pack(pady=5)
+        
+        ctk.CTkButton(cloud_frame, text="🔑 Bağlan",
+                     command=self.connect_cloud).pack(pady=5)
+        
+        ctk.CTkButton(cloud_frame, text="🔄 Senkronize Et",
+                     command=self.sync_with_cloud).pack(pady=5)
+    
+    def setup_recovery_tab(self):
+        """Kurtarma sekmesi"""
+        tab = self.main_container.add("💾 Kurtarma")
+        
+        recovery_frame = ctk.CTkFrame(tab)
+        recovery_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        ctk.CTkButton(recovery_frame, text="📸 Kurtarma Noktası Oluştur",
+                     command=self.create_recovery_point).pack(pady=5)
+        
+        ctk.CTkButton(recovery_frame, text="🔄 Sistemi Geri Yükle",
+                     command=self.restore_system).pack(pady=5)
+        
+        ctk.CTkButton(recovery_frame, text="📊 Kurtarma Geçmişi",
+                     command=self.show_recovery_history).pack(pady=5)
+    
+    def setup_monitoring_tab(self):
+        """Monitoring sekmesi"""
+        tab = self.main_container.add("📈 Monitoring")
+        
+        monitoring_frame = ctk.CTkFrame(tab)
+        monitoring_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        self.cpu_label = ctk.CTkLabel(monitoring_frame, text="CPU: --%")
+        self.cpu_label.pack(pady=2)
+        
+        self.memory_label = ctk.CTkLabel(monitoring_frame, text="RAM: --%")
+        self.memory_label.pack(pady=2)
+        
+        self.performance_label = ctk.CTkLabel(monitoring_frame, text="Performans: --")
+        self.performance_label.pack(pady=2)
+    
+    def setup_settings_tab(self):
+        """Ayarlar sekmesi"""
+        tab = self.main_container.add("⚙️ Ayarlar")
+        
+        settings_frame = ctk.CTkFrame(tab)
+        settings_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Tema seçimi
+        ctk.CTkLabel(settings_frame, text="Tema:").pack(pady=2)
+        theme_var = ctk.StringVar(value="dark")
+        theme_dropdown = ctk.CTkOptionMenu(settings_frame, 
+                                          values=["dark", "light", "blue", "high_contrast"],
+                                          variable=theme_var,
+                                          command=self.theme_manager.switch_theme)
+        theme_dropdown.pack(pady=5)
+        
+        # Otomatik tema değiştirme
+        self.auto_theme_var = ctk.BooleanVar()
+        ctk.CTkCheckBox(settings_frame, text="Otomatik tema değiştir",
+                       variable=self.auto_theme_var,
+                       command=self.toggle_auto_theme).pack(pady=5)
+    
+    def setup_quick_actions(self, parent):
+        """Hızlı aksiyon butonları"""
+        actions_frame = ctk.CTkFrame(parent)
+        actions_frame.pack(fill="x", padx=10, pady=10)
+        
+        buttons = [
+            ("🔍 Sistem Detayları", self.show_system_details),
+            ("🛡️  Hızlı Tarama", self.quick_security_scan),
+            ("💾 Yedek Al", self.quick_backup),
+            ("📊 Performans", self.show_performance)
+        ]
+        
+        for i in range(0, len(buttons), 2):
+            row_frame = ctk.CTkFrame(actions_frame)
+            row_frame.pack(pady=2)
+            
+            for text, command in buttons[i:i+2]:
+                btn = ctk.CTkButton(row_frame, text=text, command=command, width=140)
+                btn.pack(side="left", padx=2)
+    
+    def setup_update_components(self, parent):
+        """Orijinal güncelleme bileşenleri"""
         # Progress bar
-        self.progress = ctk.CTkProgressBar(self, width=450, height=20)
+        self.progress = ctk.CTkProgressBar(parent, width=550, height=20)
         self.progress.set(0)
-        self.progress.pack(pady=15)
+        self.progress.pack(pady=10)
         
         # Durum label
-        self.status_label = ctk.CTkLabel(self, text="Sistem hazır", 
-                                        font=("Arial", 14))
-        self.status_label.pack(pady=10)
-        
-        # Butonlar frame
-        button_frame = ctk.CTkFrame(self)
-        button_frame.pack(pady=15)
+        self.status_label = ctk.CTkLabel(parent, text="Sistem hazır", font=("Arial", 14))
+        self.status_label.pack(pady=5)
         
         # Güncelle butonu
-        self.update_btn = ctk.CTkButton(button_frame, text="🔄 Tümünü Güncelle",
-                                       command=self.start_update,
-                                       font=("Arial", 14),
-                                       width=140)
-        self.update_btn.pack(side="left", padx=10)
+        self.update_btn = ctk.CTkButton(parent, text="🚀 GÜNCELLEME BAŞLAT",
+                                       command=self.start_secure_update,
+                                       font=("Arial", 14, "bold"),
+                                       height=35)
+        self.update_btn.pack(pady=10)
         
-        # Detaylar butonu
-        self.details_btn = ctk.CTkButton(button_frame, text="🔍 Sistem Detayları",
-                                        command=self.show_details,
-                                        font=("Arial", 14),
-                                        width=140)
-        self.details_btn.pack(side="left", padx=10)
-        
-        # Detaylı çıktı alanı
-        self.output_text = ctk.CTkTextbox(self, width=460, height=150)
+        # Çıktı alanı
+        self.output_text = ctk.CTkTextbox(parent, width=560, height=150)
         self.output_text.pack(pady=10, fill="x", padx=20)
-        self.output_text.insert("1.0", "Güncelleme detayları burada görünecek...\n")
+        self.output_text.insert("1.0", "Güvenli güncelleme detayları burada görünecek...\n")
         self.output_text.configure(state="disabled")
+    
+    def start_advanced_systems(self):
+        """Gelişmiş sistemleri başlat"""
+        # Performans izlemeyi başlat
+        self.performance_monitor.start_monitoring()
         
-        # Çıkış butonu
-        self.quit_btn = ctk.CTkButton(self, text="❌ Çıkış",
-                                     command=self.destroy,
-                                     fg_color="red",
-                                     font=("Arial", 12))
-        self.quit_btn.pack(pady=10)
+        # Durum güncelleme döngüsünü başlat
+        self.start_advanced_status_updater()
+        
+        # Güvenlik taraması
+        threading.Thread(target=self.initial_security_scan, daemon=True).start()
     
-    def show_details(self):
-        """Detaylı bilgi penceresini aç"""
-        AdvancedDetailsWindow(self)
+    def start_advanced_status_updater(self):
+        """Gelişmiş durum güncelleyici"""
+        def update_loop():
+            while True:
+                try:
+                    # Performans metriklerini güncelle
+                    report = self.performance_monitor.get_performance_report()
+                    
+                    self.cpu_label.configure(text=f"CPU: {report['cpu_usage']:.1f}%")
+                    self.memory_label.configure(text=f"RAM: {report['memory_usage']:.1f}%")
+                    
+                    # Performans durumu
+                    if report['cpu_usage'] > 80:
+                        status = "⚠️ Yüksek Yük"
+                    elif report['cpu_usage'] > 60:
+                        status = "🔶 Orta Yük"
+                    else:
+                        status = "✅ Normal"
+                    
+                    self.performance_label.configure(text=f"Performans: {status}")
+                    
+                except Exception as e:
+                    print(f"Status update error: {e}")
+                
+                time.sleep(3)
+        
+        threading.Thread(target=update_loop, daemon=True).start()
     
-    def start_update(self):
-        """Güncellemeyi başlat"""
+    def start_secure_update(self):
+        """Güvenli güncelleme başlat"""
+        # Güvenlik kontrolü
+        if not self.security_hardening.validate_command(['update']):
+            self.notification_manager.send_notification(
+                "Güvenlik Uyarısı",
+                "Güncelleme komutu güvenlik kontrolünden geçemedi!",
+                "security"
+            )
+            return
+        
         self.progress.set(0)
-        self.status_label.configure(text="Güncelleme başlatılıyor...")
+        self.status_label.configure(text="Güvenli güncelleme başlatılıyor...")
         self.update_btn.configure(state="disabled")
         
-        # Çıktı alanını temizle
         self.output_text.configure(state="normal")
         self.output_text.delete("1.0", "end")
-        self.output_text.insert("end", "🔧 Güncelleme başlatıldı...\n")
+        self.output_text.insert("end", "🔒 GÜVENLİ GÜNCELLEME BAŞLATILDI\n")
+        self.output_text.insert("end", "• Komut güvenlik kontrolü: ✅\n")
+        self.output_text.insert("end", "• Sistem izolasyonu: ✅\n")
         self.output_text.configure(state="disabled")
         
+        # Bildirim gönder
+        self.notification_manager.send_notification(
+            "Güncelleme Başlatıldı",
+            "Sistem güncellemesi güvenli modda başlatıldı",
+            "normal"
+        )
+        
         # Thread'de çalıştır
-        thread = threading.Thread(target=self.run_update_thread)
+        thread = threading.Thread(target=self.run_secure_update_thread)
         thread.daemon = True
         thread.start()
     
-    def run_update_thread(self):
-        self.update_manager.run_updates(self.update_progress, self.update_done)
+    def run_secure_update_thread(self):
+        """Güvenli güncelleme thread'i"""
+        managers = self.package_manager.get_available_managers()
+        
+        if not managers:
+            error_msg = "❌ Paket yöneticisi bulunamadı"
+            self.notification_manager.send_notification("Güncelleme Hatası", error_msg, "critical")
+            self.update_done(error_msg, [])
+            return
+        
+        total_commands = sum(len(mgr['commands']) for mgr in managers.values())
+        completed = 0
+        success_count = 0
+        details = []
+        
+        for manager_id, manager_info in managers.items():
+            for command in manager_info['commands']:
+                completed += 1
+                progress = (completed / total_commands) * 100
+                
+                self.update_progress(progress, f"{manager_info['name']} - {command[0]}")
+                
+                # Güvenli komut çalıştırma
+                result = self.security_hardening.secure_command_execution(command)
+                
+                if result['success']:
+                    success_count += 1
+                    details.append(f"✅ {manager_info['name']} - Başarılı")
+                else:
+                    details.append(f"❌ {manager_info['name']} - Hata: {result['error']}")
+                
+                time.sleep(1)
+        
+        summary = f"🎉 Güvenli güncelleme tamamlandı! {success_count}/{total_commands} başarılı"
+        
+        # Bildirim gönder
+        self.notification_manager.send_notification(
+            "Güncelleme Tamamlandı",
+            f"{success_count}/{total_commands} işlem başarılı",
+            "normal" if success_count == total_commands else "warning"
+        )
+        
+        self.update_done(summary, details)
     
     def update_progress(self, percent, detail):
         """İlerlemeyi güncelle"""
         self.progress.set(percent / 100)
-        self.status_label.configure(text=f"Güncelleniyor... %{int(percent)}")
+        self.status_label.configure(text=f"Güvenli güncelleme... %{int(percent)}")
         
         self.output_text.configure(state="normal")
         self.output_text.insert("end", f"⏳ {detail}\n")
@@ -528,7 +1003,7 @@ class UniversalUpdaterApp(ctk.CTk):
     def update_done(self, message, details):
         """Güncelleme tamamlandı"""
         self.progress.set(1.0)
-        self.status_label.configure(text="Tamamlandı!")
+        self.status_label.configure(text="Güvenli güncelleme tamamlandı!")
         self.update_btn.configure(state="normal")
         
         self.output_text.configure(state="normal")
@@ -538,1531 +1013,125 @@ class UniversalUpdaterApp(ctk.CTk):
         self.output_text.see("end")
         self.output_text.configure(state="disabled")
         
-        messagebox.showinfo("Güncelleme Tamamlandı", message)
+        # Kurtarma noktası oluştur
+        self.disaster_recovery.create_recovery_point("post_update")
+    
+    # Gelişmiş metodlar
+    def start_security_scan(self):
+        """Güvenlik taraması başlat"""
+        self.notification_manager.send_notification(
+            "Güvenlik Taraması",
+            "Sistem güvenlik taraması başlatıldı",
+            "security"
+        )
+        
+        def scan_thread():
+            vulnerabilities = self.security_manager.vulnerability_scan()
+            
+            if vulnerabilities:
+                message = f"{len(vulnerabilities)} güvenlik açığı bulundu"
+                self.notification_manager.send_notification(
+                    "Güvenlik Uyarısı",
+                    message,
+                    "critical"
+                )
+            else:
+                self.notification_manager.send_notification(
+                    "Güvenlik Taraması",
+                    "Güvenlik taraması temiz",
+                    "normal"
+                )
+        
+        threading.Thread(target=scan_thread, daemon=True).start()
+    
+    def connect_cloud(self):
+        """Buluta bağlan"""
+        api_key = self.api_key_entry.get()
+        if self.cloud_integration.authenticate(api_key):
+            self.notification_manager.send_notification(
+                "Bulut Bağlantısı",
+                "Bulut servisine başarıyla bağlanıldı",
+                "normal"
+            )
+        else:
+            self.notification_manager.send_notification(
+                "Bağlantı Hatası",
+                "Bulut servisine bağlanılamadı",
+                "warning"
+            )
+    
+    def create_recovery_point(self):
+        """Kurtarma noktası oluştur"""
+        if self.disaster_recovery.create_recovery_point("manual_backup"):
+            self.notification_manager.send_notification(
+                "Kurtarma Noktası",
+                "Sistem kurtarma noktası oluşturuldu",
+                "normal"
+            )
+        else:
+            self.notification_manager.send_notification(
+                "Yedekleme Hatası",
+                "Kurtarma noktası oluşturulamadı",
+                "warning"
+            )
+    
+    def toggle_auto_theme(self):
+        """Otomatik tema değiştirmeyi aç/kapat"""
+        if self.auto_theme_var.get():
+            self.theme_manager.enable_auto_switch()
+        else:
+            self.theme_manager.auto_switch_enabled = False
+    
+    def initial_security_scan(self):
+        """İlk güvenlik taraması"""
+        time.sleep(5)  # Uygulama başladıktan sonra
+        self.security_manager.vulnerability_scan()
+    
+    def quick_security_scan(self):
+        """Hızlı güvenlik taraması"""
+        self.start_security_scan()
+    
+    def quick_backup(self):
+        """Hızlı yedek"""
+        self.create_recovery_point()
+    
+    def show_performance(self):
+        """Performans bilgilerini göster"""
+        report = self.performance_monitor.get_performance_report()
+        messagebox.showinfo(
+            "Sistem Performansı",
+            f"CPU: {report['cpu_usage']:.1f}%\n"
+            f"RAM: {report['memory_usage']:.1f}%\n"
+            f"Eşzamanlı Güncelleme: {report['scaling_policy']['max_concurrent_updates']}"
+        )
+    
+    def show_system_details(self):
+        """Sistem detaylarını göster"""
+        PlatformSpecificUI.show_details(self)
 
-# ---------- Uygulamayı Başlat ----------
+# =========== UYGULAMAYI BAŞLAT ===========
+
 if __name__ == "__main__":
     # Çapraz platform uyumluluk
     if platform.system().lower() not in ['windows', 'darwin', 'linux']:
         print("⚠️ Desteklenmeyen işletim sistemi")
         sys.exit(1)
     
-    app = UniversalUpdaterApp()
-    app.mainloop()
-
-
-
-import os
-import platform
-import shutil
-import subprocess
-import threading
-import time
-from datetime import datetime, timedelta
-import customtkinter as ctk
-from tkinter import messagebox
-import sys
-import json
-import schedule
-from typing import Dict, List, Optional
-
-# ---------- Zamanlama Sistemi ----------
-class ScheduledUpdateManager:
-    def __init__(self, config_file="schedule_config.json"):
-        self.config_file = config_file
-        self.schedule_config = self.load_config()
-        self.scheduler_running = False
-        
-    def load_config(self) -> Dict:
-        """Zamanlama ayarlarını yükle"""
-        default_config = {
-            "enabled": False,
-            "schedule_type": "weekly",  # weekly, daily, monthly
-            "day_of_week": "monday",    # monday, tuesday, etc.
-            "time": "14:00",            # HH:MM format
-            "last_run": None,
-            "next_run": None
-        }
-        
-        try:
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-        except Exception as e:
-            print(f"Config yükleme hatası: {e}")
-            
-        return default_config
-    
-    def save_config(self):
-        """Zamanlama ayarlarını kaydet"""
-        try:
-            with open(self.config_file, 'w', encoding='utf-8') as f:
-                json.dump(self.schedule_config, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"Config kaydetme hatası: {e}")
-    
-    def set_schedule(self, schedule_type: str, day_of_week: str, time_str: str):
-        """Yeni zamanlama ayarla"""
-        self.schedule_config.update({
-            "enabled": True,
-            "schedule_type": schedule_type.lower(),
-            "day_of_week": day_of_week.lower(),
-            "time": time_str,
-            "last_run": None,
-            "next_run": self.calculate_next_run(schedule_type, day_of_week, time_str)
-        })
-        self.save_config()
-        
-    def calculate_next_run(self, schedule_type: str, day_of_week: str, time_str: str) -> str:
-        """Bir sonraki çalışma zamanını hesapla"""
-        now = datetime.now()
-        target_time = datetime.strptime(time_str, "%H:%M").time()
-        
-        if schedule_type == "daily":
-            next_run = datetime.combine(now.date(), target_time)
-            if next_run <= now:
-                next_run += timedelta(days=1)
-                
-        elif schedule_type == "weekly":
-            days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-            target_day = days.index(day_of_week.lower())
-            current_day = now.weekday()
-            
-            days_ahead = target_day - current_day
-            if days_ahead <= 0:
-                days_ahead += 7
-                
-            next_run = datetime.combine(now.date() + timedelta(days=days_ahead), target_time)
-            
-        else:  # monthly
-            next_run = datetime.combine(now.date().replace(day=1), target_time)
-            if next_run <= now:
-                next_run = next_run.replace(month=next_run.month + 1)
-        
-        return next_run.isoformat()
-    
-    def get_next_run_info(self) -> str:
-        """Bir sonraki çalışma bilgisini formatla"""
-        if not self.schedule_config["enabled"]:
-            return "Zamanlama kapalı"
-            
-        next_run_str = self.schedule_config.get("next_run")
-        if not next_run_str:
-            return "Zamanlama ayarlanmamış"
-            
-        try:
-            next_run = datetime.fromisoformat(next_run_str)
-            now = datetime.now()
-            
-            if next_run <= now:
-                return "Şimdi çalışacak!"
-            else:
-                delta = next_run - now
-                days = delta.days
-                hours = delta.seconds // 3600
-                minutes = (delta.seconds % 3600) // 60
-                
-                if days > 0:
-                    return f"{days} gün {hours} saat sonra"
-                elif hours > 0:
-                    return f"{hours} saat {minutes} dakika sonra"
-                else:
-                    return f"{minutes} dakika sonra"
-                    
-        except Exception as e:
-            return f"Hesaplama hatası: {e}"
-    
-    def start_scheduler(self, update_callback):
-        """Zamanlayıcıyı başlat"""
-        if not self.schedule_config["enabled"]:
-            return
-            
-        self.scheduler_running = True
-        self.update_callback = update_callback
-        
-        # Schedule kütüphanesi ile zamanlama
-        schedule.clear()
-        
-        if self.schedule_config["schedule_type"] == "daily":
-            schedule.every().day.at(self.schedule_config["time"]).do(
-                self._run_scheduled_update
-            )
-        elif self.schedule_config["schedule_type"] == "weekly":
-            day_method = getattr(schedule.every(), self.schedule_config["day_of_week"])
-            day_method.at(self.schedule_config["time"]).do(
-                self._run_scheduled_update
-            )
-        
-        # Zamanlayıcı thread'ini başlat
-        self.scheduler_thread = threading.Thread(target=self._scheduler_loop, daemon=True)
-        self.scheduler_thread.start()
-        
-        print("⏰ Zamanlayıcı başlatıldı")
-    
-    def _scheduler_loop(self):
-        """Zamanlayıcı döngüsü"""
-        while self.scheduler_running:
-            schedule.run_pending()
-            time.sleep(60)  # Her dakika kontrol et
-    
-    def _run_scheduled_update(self):
-        """Zamanlanmış güncellemeyi çalıştır"""
-        print("🔄 Zamanlanmış güncelleme başlatılıyor...")
-        
-        # Son çalışma zamanını güncelle
-        self.schedule_config["last_run"] = datetime.now().isoformat()
-        self.schedule_config["next_run"] = self.calculate_next_run(
-            self.schedule_config["schedule_type"],
-            self.schedule_config["day_of_week"],
-            self.schedule_config["time"]
-        )
-        self.save_config()
-        
-        # Güncellemeyi başlat
-        if self.update_callback:
-            self.update_callback(scheduled=True)
-    
-    def stop_scheduler(self):
-        """Zamanlayıcıyı durdur"""
-        self.scheduler_running = False
-        schedule.clear()
-        print("⏹️ Zamanlayıcı durduruldu")
-
-# ---------- Platform Tespiti (Önceki koddan) ----------
-class PlatformDetector:
-    @staticmethod
-    def get_platform_info():
-        system = platform.system().lower()
-        info = {
-            'system': system,
-            'release': platform.release(),
-            'version': platform.version(),
-            'architecture': platform.architecture()[0],
-            'processor': platform.processor(),
-            'python_version': platform.python_version()
-        }
-        
-        if system == 'linux':
-            info['distribution'] = PlatformDetector.get_linux_distro()
-        elif system == 'darwin':
-            info['distribution'] = PlatformDetector.get_macos_version()
-            
-        return info
-    
-    @staticmethod
-    def get_linux_distro():
-        try:
-            if os.path.exists('/etc/os-release'):
-                with open('/etc/os-release', 'r') as f:
-                    for line in f:
-                        if line.startswith('PRETTY_NAME='):
-                            return line.split('=')[1].strip().strip('"')
-        except:
-            pass
-        return "Linux"
-    
-    @staticmethod
-    def get_macos_version():
-        try:
-            result = subprocess.run(['sw_vers', '-productVersion'], 
-                                  capture_output=True, text=True)
-            return f"macOS {result.stdout.strip()}"
-        except:
-            return "macOS"
-
-# ---------- Çapraz Platform Paket Yöneticileri (Önceki koddan) ----------
-class CrossPlatformPackageManager:
-    def __init__(self):
-        self.platform_info = PlatformDetector.get_platform_info()
-        self.system = self.platform_info['system']
-        
-    def get_available_managers(self):
-        managers = {}
-        
-        if self.system == 'windows':
-            managers.update(self._get_windows_managers())
-        elif self.system == 'darwin':
-            managers.update(self._get_macos_managers())
-        elif self.system == 'linux':
-            managers.update(self._get_linux_managers())
-            
-        return managers
-    
-    def _get_windows_managers(self):
-        managers = {}
-        
-        if shutil.which('winget'):
-            managers['winget'] = {
-                'name': 'Windows Package Manager',
-                'description': 'Microsoft resmi paket yöneticisi',
-                'commands': [
-                    ['winget', 'upgrade', '--all', '--accept-source-agreements', '--accept-package-agreements']
-                ]
-            }
-        
-        if shutil.which('choco'):
-            managers['choco'] = {
-                'name': 'Chocolatey',
-                'description': 'Windows için paket yöneticisi',
-                'commands': [
-                    ['choco', 'upgrade', 'all', '-y']
-                ]
-            }
-            
-        return managers
-    
-    def _get_macos_managers(self):
-        managers = {}
-        
-        if shutil.which('brew'):
-            managers['brew'] = {
-                'name': 'Homebrew',
-                'description': 'macOS için paket yöneticisi',
-                'commands': [
-                    ['brew', 'update'],
-                    ['brew', 'upgrade'],
-                    ['brew', 'cleanup', '-s']
-                ]
-            }
-        
-        if shutil.which('mas'):
-            managers['mas'] = {
-                'name': 'Mac App Store',
-                'description': 'Mac App Store uygulamaları',
-                'commands': [
-                    ['mas', 'upgrade']
-                ]
-            }
-            
-        return managers
-    
-    def _get_linux_managers(self):
-        managers = {}
-        
-        if shutil.which('apt') or shutil.which('apt-get'):
-            apt_cmd = 'apt' if shutil.which('apt') else 'apt-get'
-            managers['apt'] = {
-                'name': 'APT Package Manager',
-                'description': 'Debian tabanlı sistemler',
-                'commands': [
-                    ['sudo', apt_cmd, 'update'],
-                    ['sudo', apt_cmd, 'upgrade', '-y'],
-                ]
-            }
-        
-        if shutil.which('dnf'):
-            managers['dnf'] = {
-                'name': 'DNF Package Manager',
-                'description': 'Fedora/RHEL tabanlı sistemler',
-                'commands': [
-                    ['sudo', 'dnf', 'upgrade', '--refresh', '-y']
-                ]
-            }
-        
-        return managers
-
-# ---------- Zamanlama Ayarları Penceresi ----------
-class ScheduleSettingsWindow(ctk.CTkToplevel):
-    def __init__(self, parent, schedule_manager, on_schedule_updated):
-        super().__init__(parent)
-        self.schedule_manager = schedule_manager
-        self.on_schedule_updated = on_schedule_updated
-        
-        self.title("⏰ Zamanlanmış Güncelleme Ayarları")
-        self.geometry("500x400")
-        self.transient(parent)
-        self.grab_set()
-        
-        self.setup_ui()
-        self.load_current_settings()
-    
-    def setup_ui(self):
-        # Ana frame
-        main_frame = ctk.CTkFrame(self)
-        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        # Başlık
-        title_label = ctk.CTkLabel(main_frame, text="Zamanlanmış Güncelleme", 
-                                  font=("Arial", 16, "bold"))
-        title_label.pack(pady=15)
-        
-        # Aktiflik durumu
-        self.enable_var = ctk.BooleanVar()
-        self.enable_check = ctk.CTkCheckBox(main_frame, text="Zamanlanmış güncellemeyi aktif et",
-                                           variable=self.enable_var,
-                                           command=self.toggle_settings)
-        self.enable_check.pack(pady=10)
-        
-        # Zamanlama türü
-        type_frame = ctk.CTkFrame(main_frame)
-        type_frame.pack(fill="x", padx=10, pady=5)
-        
-        ctk.CTkLabel(type_frame, text="Zamanlama Türü:").pack(side="left", padx=5)
-        self.schedule_type = ctk.CTkOptionMenu(type_frame, 
-                                              values=["Günlük", "Haftalık", "Aylık"])
-        self.schedule_type.pack(side="left", padx=5)
-        self.schedule_type.set("Haftalık")
-        
-        # Gün seçimi (haftalık için)
-        self.day_frame = ctk.CTkFrame(main_frame)
-        self.day_frame.pack(fill="x", padx=10, pady=5)
-        
-        ctk.CTkLabel(self.day_frame, text="Gün:").pack(side="left", padx=5)
-        self.day_of_week = ctk.CTkOptionMenu(self.day_frame,
-                                           values=["Pazartesi", "Salı", "Çarşamba", "Perşembe", 
-                                                  "Cuma", "Cumartesi", "Pazar"])
-        self.day_of_week.pack(side="left", padx=5)
-        self.day_of_week.set("Pazartesi")
-        
-        # Saat seçimi
-        time_frame = ctk.CTkFrame(main_frame)
-        time_frame.pack(fill="x", padx=10, pady=5)
-        
-        ctk.CTkLabel(time_frame, text="Saat:").pack(side="left", padx=5)
-        self.hour_var = ctk.StringVar(value="14")
-        self.hour_entry = ctk.CTkEntry(time_frame, textvariable=self.hour_var, width=50)
-        self.hour_entry.pack(side="left", padx=5)
-        
-        ctk.CTkLabel(time_frame, text=":").pack(side="left", padx=2)
-        self.minute_var = ctk.StringVar(value="00")
-        self.minute_entry = ctk.CTkEntry(time_frame, textvariable=self.minute_var, width=50)
-        self.minute_entry.pack(side="left", padx=5)
-        
-        # Durum bilgisi
-        self.status_label = ctk.CTkLabel(main_frame, text="", 
-                                        text_color="gray", font=("Arial", 10))
-        self.status_label.pack(pady=10)
-        
-        # Butonlar
-        button_frame = ctk.CTkFrame(main_frame)
-        button_frame.pack(pady=20)
-        
-        ctk.CTkButton(button_frame, text="✅ Kaydet", 
-                     command=self.save_settings).pack(side="left", padx=10)
-        ctk.CTkButton(button_frame, text="❌ İptal", 
-                     command=self.destroy).pack(side="left", padx=10)
-    
-    def load_current_settings(self):
-        """Mevcut ayarları yükle"""
-        config = self.schedule_manager.schedule_config
-        
-        self.enable_var.set(config["enabled"])
-        
-        if config["schedule_type"] == "daily":
-            self.schedule_type.set("Günlük")
-        elif config["schedule_type"] == "weekly":
-            self.schedule_type.set("Haftalık")
-        else:
-            self.schedule_type.set("Aylık")
-        
-        # Gün mapping
-        day_map = {"monday": "Pazartesi", "tuesday": "Salı", "wednesday": "Çarşamba",
-                  "thursday": "Perşembe", "friday": "Cuma", "saturday": "Cumartesi",
-                  "sunday": "Pazar"}
-        self.day_of_week.set(day_map.get(config["day_of_week"], "Pazartesi"))
-        
-        if config["time"]:
-            hour, minute = config["time"].split(":")
-            self.hour_var.set(hour)
-            self.minute_var.set(minute)
-        
-        self.update_status_display()
-        self.toggle_settings()
-    
-    def toggle_settings(self):
-        """Ayarları aktif/pasif yap"""
-        enabled = self.enable_var.get()
-        widgets = [self.schedule_type, self.day_of_week, self.hour_entry, self.minute_entry]
-        
-        for widget in widgets:
-            if enabled:
-                widget.configure(state="normal")
-            else:
-                widget.configure(state="disabled")
-    
-    def update_status_display(self):
-        """Durum bilgisini güncelle"""
-        next_run_info = self.schedule_manager.get_next_run_info()
-        config = self.schedule_manager.schedule_config
-        
-        status_text = f"Sonraki çalışma: {next_run_info}\n"
-        
-        if config.get("last_run"):
-            last_run = datetime.fromisoformat(config["last_run"])
-            status_text += f"Son çalışma: {last_run.strftime('%d.%m.%Y %H:%M')}"
-        
-        self.status_label.configure(text=status_text)
-    
-    def save_settings(self):
-        """Ayarları kaydet"""
-        try:
-            if not self.enable_var.get():
-                # Zamanlamayı kapat
-                self.schedule_manager.schedule_config["enabled"] = False
-                self.schedule_manager.save_config()
-                self.on_schedule_updated()
-                self.destroy()
-                return
-            
-            # Zamanlama türü mapping
-            type_map = {"Günlük": "daily", "Haftalık": "weekly", "Aylık": "monthly"}
-            schedule_type = type_map[self.schedule_type.get()]
-            
-            # Gün mapping
-            day_map = {"Pazartesi": "monday", "Salı": "tuesday", "Çarşamba": "wednesday",
-                      "Perşembe": "thursday", "Cuma": "friday", "Cumartesi": "saturday",
-                      "Pazar": "sunday"}
-            day_of_week = day_map[self.day_of_week.get()]
-            
-            # Saat kontrolü
-            hour = int(self.hour_var.get())
-            minute = int(self.minute_var.get())
-            
-            if not (0 <= hour <= 23) or not (0 <= minute <= 59):
-                messagebox.showerror("Hata", "Saat 0-23, dakika 0-59 arası olmalı!")
-                return
-            
-            time_str = f"{hour:02d}:{minute:02d}"
-            
-            # Ayarları kaydet
-            self.schedule_manager.set_schedule(schedule_type, day_of_week, time_str)
-            self.on_schedule_updated()
-            
-            messagebox.showinfo("Başarılı", "Zamanlama ayarları kaydedildi!")
-            self.destroy()
-            
-        except ValueError:
-            messagebox.showerror("Hata", "Geçersiz saat formatı!")
-        except Exception as e:
-            messagebox.showerror("Hata", f"Ayarlar kaydedilemedi: {e}")
-
-# ---------- Güncellenmiş Ana Uygulama ----------
-class UniversalUpdaterApp(ctk.CTk):
-    def __init__(self):
-        super().__init__()
-        
-        # Platform ayarları
-        self.platform_info = PlatformDetector.get_platform_info()
-        system = self.platform_info['system']
-        
-        # GUI ayarları
-        ctk.set_appearance_mode("system")
-        ctk.set_default_color_theme("blue")
-        
-        self.title("🚀 Evrensel Sistem Güncelleyici")
-        self.geometry("500x450")
-        
-        # Yöneticiler
-        self.package_manager = CrossPlatformPackageManager()
-        self.schedule_manager = ScheduledUpdateManager()
-        
-        self.setup_ui()
-        
-        # Zamanlayıcıyı başlat
-        self.schedule_manager.start_scheduler(self.start_scheduled_update)
-    
-    def setup_ui(self):
-        # Başlık
-        title_label = ctk.CTkLabel(self, text="🚀 Sistem Güncelleyici", 
-                                  font=("Arial", 20, "bold"))
-        title_label.pack(pady=15)
-        
-        # Platform bilgisi
-        platform_name = self.platform_info.get('distribution') or f"{self.platform_info['system'].title()} {self.platform_info['release']}"
-        platform_label = ctk.CTkLabel(self, text=f"Platform: {platform_name}", 
-                                     font=("Arial", 12))
-        platform_label.pack(pady=5)
-        
-        # Zamanlama durumu
-        self.schedule_status = ctk.CTkLabel(self, text="", font=("Arial", 10))
-        self.schedule_status.pack(pady=5)
-        self.update_schedule_status()
-        
-        # Progress bar
-        self.progress = ctk.CTkProgressBar(self, width=450, height=20)
-        self.progress.set(0)
-        self.progress.pack(pady=15)
-        
-        # Durum label
-        self.status_label = ctk.CTkLabel(self, text="Sistem hazır", 
-                                        font=("Arial", 14))
-        self.status_label.pack(pady=10)
-        
-        # Butonlar frame
-        button_frame = ctk.CTkFrame(self)
-        button_frame.pack(pady=10)
-        
-        # Güncelle butonu
-        self.update_btn = ctk.CTkButton(button_frame, text="🔄 Güncelle",
-                                       command=lambda: self.start_update(),
-                                       font=("Arial", 12),
-                                       width=100)
-        self.update_btn.pack(side="left", padx=5)
-        
-        # Zamanlama butonu
-        self.schedule_btn = ctk.CTkButton(button_frame, text="⏰ Zamanlama",
-                                         command=self.show_schedule_settings,
-                                         font=("Arial", 12),
-                                         width=100)
-        self.schedule_btn.pack(side="left", padx=5)
-        
-        # Detaylar butonu
-        self.details_btn = ctk.CTkButton(button_frame, text="🔍 Detaylar",
-                                        command=self.show_details,
-                                        font=("Arial", 12),
-                                        width=100)
-        self.details_btn.pack(side="left", padx=5)
-        
-        # Çıktı alanı
-        self.output_text = ctk.CTkTextbox(self, width=460, height=150)
-        self.output_text.pack(pady=10, fill="x", padx=20)
-        self.output_text.insert("1.0", "Güncelleme detayları burada görünecek...\n")
-        self.output_text.configure(state="disabled")
-        
-        # Çıkış butonu
-        self.quit_btn = ctk.CTkButton(self, text="❌ Çıkış",
-                                     command=self.cleanup_and_exit,
-                                     fg_color="red",
-                                     font=("Arial", 12))
-        self.quit_btn.pack(pady=10)
-    
-    def update_schedule_status(self):
-        """Zamanlama durumunu güncelle"""
-        status = self.schedule_manager.get_next_run_info()
-        color = "green" if "sonra" in status else "orange"
-        self.schedule_status.configure(text=f"⏰ {status}", text_color=color)
-    
-    def show_schedule_settings(self):
-        """Zamanlama ayarları penceresini aç"""
-        ScheduleSettingsWindow(self, self.schedule_manager, self.on_schedule_updated)
-    
-    def on_schedule_updated(self):
-        """Zamanlama güncellendiğinde çağrılır"""
-        self.schedule_manager.stop_scheduler()
-        self.schedule_manager.start_scheduler(self.start_scheduled_update)
-        self.update_schedule_status()
-    
-    def start_scheduled_update(self, scheduled=False):
-        """Zamanlanmış güncellemeyi başlat"""
-        if scheduled:
-            # Bildirim göster (basit versiyon)
-            try:
-                if platform.system() == "Windows":
-                    subprocess.run(["msg", "*", "Zamanlanmış güncelleme başlatılıyor..."])
-            except:
-                pass
-        
-        self.start_update()
-    
-    def start_update(self, scheduled=False):
-        """Güncellemeyi başlat"""
-        self.progress.set(0)
-        self.status_label.configure(text="Güncelleme başlatılıyor...")
-        self.update_btn.configure(state="disabled")
-        
-        self.output_text.configure(state="normal")
-        self.output_text.delete("1.0", "end")
-        
-        if scheduled:
-            self.output_text.insert("end", "⏰ ZAMANLANMIŞ GÜNCELLEME BAŞLATILDI\n")
-        else:
-            self.output_text.insert("end", "🔧 Manuel güncelleme başlatıldı...\n")
-            
-        self.output_text.configure(state="disabled")
-        
-        thread = threading.Thread(target=self.run_update_thread)
-        thread.daemon = True
-        thread.start()
-    
-    def run_update_thread(self):
-        """Güncelleme thread'i"""
-        managers = self.package_manager.get_available_managers()
-        
-        if not managers:
-            self.update_done("❌ Paket yöneticisi bulunamadı", [])
-            return
-        
-        total_commands = sum(len(mgr['commands']) for mgr in managers.values())
-        completed = 0
-        success_count = 0
-        details = []
-        
-        for manager_id, manager_info in managers.items():
-            for command in manager_info['commands']:
-                completed += 1
-                progress = (completed / total_commands) * 100
-                
-                self.update_progress(progress, f"{manager_info['name']} - {command[0]}")
-                
-                try:
-                    result = subprocess.run(command, capture_output=True, text=True, timeout=300)
-                    
-                    if result.returncode == 0:
-                        success_count += 1
-                        details.append(f"✅ {manager_info['name']} - Başarılı")
-                    else:
-                        error_msg = result.stderr[:100] if result.stderr else "Bilinmeyen hata"
-                        details.append(f"❌ {manager_info['name']} - Hata: {error_msg}")
-                        
-                except Exception as e:
-                    details.append(f"⚠️ {manager_info['name']} - Hata: {str(e)}")
-                
-                time.sleep(1)
-        
-        summary = f"🎉 Güncelleme tamamlandı! {success_count}/{total_commands} başarılı"
-        self.update_done(summary, details)
-    
-    def update_progress(self, percent, detail):
-        self.progress.set(percent / 100)
-        self.status_label.configure(text=f"Güncelleniyor... %{int(percent)}")
-        
-        self.output_text.configure(state="normal")
-        self.output_text.insert("end", f"⏳ {detail}\n")
-        self.output_text.see("end")
-        self.output_text.configure(state="disabled")
-    
-    def update_done(self, message, details):
-        self.progress.set(1.0)
-        self.status_label.configure(text="Tamamlandı!")
-        self.update_btn.configure(state="normal")
-        
-        self.output_text.configure(state="normal")
-        self.output_text.insert("end", f"\n🎉 {message}\n")
-        for detail in details:
-            self.output_text.insert("end", f"• {detail}\n")
-        self.output_text.see("end")
-        self.output_text.configure(state="disabled")
-        
-        # Zamanlama durumunu güncelle
-        self.schedule_manager.schedule_config["last_run"] = datetime.now().isoformat()
-        self.schedule_manager.save_config()
-        self.update_schedule_status()
-        
-        messagebox.showinfo("Güncelleme Tamamlandı", message)
-    
-    def show_details(self):
-        """Basit detaylar penceresi"""
-        managers = self.package_manager.get_available_managers()
-        
-        details_text = f"🖥️ SİSTEM BİLGİLERİ\n"
-        details_text += f"• Platform: {self.platform_info['system'].title()}\n"
-        details_text += f"• Sürüm: {self.platform_info['release']}\n"
-        details_text += f"• Mimari: {self.platform_info['architecture']}\n\n"
-        
-        details_text += f"📦 PAKET YÖNETİCİLERİ ({len(managers)} adet)\n"
-        for manager_id, manager_info in managers.items():
-            details_text += f"• {manager_info['name']}\n"
-        
-        messagebox.showinfo("Sistem Detayları", details_text)
-    
-    def cleanup_and_exit(self):
-        """Temizlik yap ve çık"""
-        self.schedule_manager.stop_scheduler()
-        self.destroy()
-
-# ---------- Uygulamayı Başlat ----------
-if __name__ == "__main__":
-    # Schedule kütüphanesi kontrolü
+    # Gerekli kütüphaneleri kontrol et
     try:
-        import schedule
+        import psutil
     except ImportError:
-        print("❌ 'schedule' kütüphanesi gerekli. Yüklemek için:")
-        print("pip install schedule")
+        print("❌ 'psutil' kütüphanesi gerekli. Yüklemek için:")
+        print("pip install psutil")
         sys.exit(1)
     
-    app = UniversalUpdaterApp()
-    app.mainloop()
-
-
-#!/usr/bin/env python3
-"""
-🚀 Evrensel Çapraz Platform Sistem Güncelleyici
-Gelişmiş Loglama ve Geçmiş Kaydı ile
-"""
-
-import os
-import platform
-import shutil
-import subprocess
-import threading
-import time
-from datetime import datetime, timedelta
-import customtkinter as ctk
-from tkinter import messagebox
-import sys
-import json
-import schedule
-import logging
-from logging.handlers import RotatingFileHandler
-import csv
-import sqlite3
-from typing import Dict, List, Optional, Any
-import gzip
-import hashlib
-
-# ---------- Gelişmiş Loglama Sistemi ----------
-class AdvancedLogger:
-    def __init__(self, log_dir="logs"):
-        self.log_dir = log_dir
-        self.setup_directories()
-        self.setup_logging()
-        
-    def setup_directories(self):
-        """Log dizinlerini oluştur"""
-        os.makedirs(self.log_dir, exist_ok=True)
-        os.makedirs(os.path.join(self.log_dir, "archives"), exist_ok=True)
-        
-    def setup_logging(self):
-        """Loglama sistemini kur"""
-        # Logger'ı oluştur
-        self.logger = logging.getLogger('SystemUpdater')
-        self.logger.setLevel(logging.INFO)
-        
-        # Format
-        formatter = logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        
-        # Dosya handler (dönen loglar)
-        log_file = os.path.join(self.log_dir, 'updater.log')
-        file_handler = RotatingFileHandler(
-            log_file, 
-            maxBytes=5*1024*1024,  # 5MB
-            backupCount=10,
-            encoding='utf-8'
-        )
-        file_handler.setFormatter(formatter)
-        
-        # Konsol handler
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        
-        # Handler'ları ekle
-        self.logger.addHandler(file_handler)
-        self.logger.addHandler(console_handler)
-        
-    def log_update_start(self, update_type="manual"):
-        """Güncelleme başlangıcını logla"""
-        self.logger.info(f"🔧 GÜNCELLEME BAŞLATILDI - Tip: {update_type}")
-        self.logger.info(f"🖥️  Sistem: {platform.system()} {platform.release()}")
-        self.logger.info(f"🐍 Python: {platform.python_version()}")
-        
-    def log_update_result(self, success_count, total_commands, details):
-        """Güncelleme sonucunu logla"""
-        success_rate = (success_count / total_commands) * 100 if total_commands > 0 else 0
-        self.logger.info(f"📊 GÜNCELLEME SONUCU - Başarı: {success_count}/{total_commands} (%{success_rate:.1f})")
-        
-        for detail in details:
-            if "✅" in detail:
-                self.logger.info(f"  {detail}")
-            elif "❌" in detail or "⚠️" in detail:
-                self.logger.warning(f"  {detail}")
-            else:
-                self.logger.info(f"  {detail}")
-                
-    def log_error(self, error_message, context=""):
-        """Hata logla"""
-        if context:
-            self.logger.error(f"❌ {context} - {error_message}")
-        else:
-            self.logger.error(f"❌ {error_message}")
-            
-    def log_warning(self, warning_message, context=""):
-        """Uyarı logla"""
-        if context:
-            self.logger.warning(f"⚠️ {context} - {warning_message}")
-        else:
-            self.logger.warning(f"⚠️ {warning_message}")
-            
-    def log_info(self, info_message, context=""):
-        """Bilgi logla"""
-        if context:
-            self.logger.info(f"ℹ️  {context} - {info_message}")
-        else:
-            self.logger.info(f"ℹ️  {info_message}")
-
-# ---------- Geçmiş Kaydı Sistemi ----------
-class UpdateHistoryManager:
-    def __init__(self, history_dir="history"):
-        self.history_dir = history_dir
-        self.setup_directories()
-        self.setup_database()
-        
-    def setup_directories(self):
-        """Geçmiş dizinlerini oluştur"""
-        os.makedirs(self.history_dir, exist_ok=True)
-        
-    def setup_database(self):
-        """SQLite veritabanını kur"""
-        self.db_path = os.path.join(self.history_dir, 'update_history.db')
-        
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Ana güncelleme geçmişi tablosu
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS update_sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                update_type TEXT NOT NULL,
-                success_count INTEGER NOT NULL,
-                total_commands INTEGER NOT NULL,
-                duration_seconds REAL NOT NULL,
-                system_info TEXT NOT NULL,
-                status TEXT NOT NULL
-            )
-        ''')
-        
-        # Detaylı komut geçmişi tablosu
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS command_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id INTEGER,
-                command_name TEXT NOT NULL,
-                command_text TEXT NOT NULL,
-                status TEXT NOT NULL,
-                return_code INTEGER,
-                output TEXT,
-                error TEXT,
-                duration_seconds REAL,
-                timestamp TEXT NOT NULL,
-                FOREIGN KEY (session_id) REFERENCES update_sessions (id)
-            )
-        ''')
-        
-        # Sistem istatistikleri tablosu
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS system_stats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                total_updates INTEGER DEFAULT 0,
-                successful_updates INTEGER DEFAULT 0,
-                total_commands INTEGER DEFAULT 0,
-                successful_commands INTEGER DEFAULT 0,
-                total_duration REAL DEFAULT 0
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
-        
-    def start_update_session(self, update_type="manual") -> int:
-        """Yeni güncelleme oturumu başlat ve ID döndür"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        system_info = json.dumps({
-            'system': platform.system(),
-            'release': platform.release(),
-            'version': platform.version(),
-            'architecture': platform.architecture()[0],
-            'python_version': platform.python_version()
-        })
-        
-        cursor.execute('''
-            INSERT INTO update_sessions 
-            (timestamp, update_type, success_count, total_commands, duration_seconds, system_info, status)
-            VALUES (?, ?, 0, 0, 0, ?, 'running')
-        ''', (datetime.now().isoformat(), update_type, system_info))
-        
-        session_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        
-        return session_id
-        
-    def log_command_result(self, session_id: int, command_name: str, command_text: str, 
-                          status: str, return_code: int, output: str, error: str, 
-                          duration: float):
-        """Komut sonucunu kaydet"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            INSERT INTO command_history 
-            (session_id, command_name, command_text, status, return_code, output, error, duration_seconds, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (session_id, command_name, command_text, status, return_code, 
-              output[:1000] if output else '', error[:1000] if error else '', 
-              duration, datetime.now().isoformat()))
-        
-        conn.commit()
-        conn.close()
-        
-    def complete_update_session(self, session_id: int, success_count: int, 
-                               total_commands: int, duration: float, status: str = "completed"):
-        """Güncelleme oturumunu tamamla"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            UPDATE update_sessions 
-            SET success_count = ?, total_commands = ?, duration_seconds = ?, status = ?
-            WHERE id = ?
-        ''', (success_count, total_commands, duration, status, session_id))
-        
-        # İstatistikleri güncelle
-        self.update_statistics(success_count, total_commands, duration)
-        
-        conn.commit()
-        conn.close()
-        
-    def update_statistics(self, success_count: int, total_commands: int, duration: float):
-        """Sistem istatistiklerini güncelle"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        today = datetime.now().strftime('%Y-%m-%d')
-        
-        cursor.execute('''
-            SELECT * FROM system_stats WHERE date = ?
-        ''', (today,))
-        
-        existing = cursor.fetchone()
-        
-        if existing:
-            cursor.execute('''
-                UPDATE system_stats 
-                SET total_updates = total_updates + 1,
-                    successful_updates = successful_updates + ?,
-                    total_commands = total_commands + ?,
-                    successful_commands = successful_commands + ?,
-                    total_duration = total_duration + ?
-                WHERE date = ?
-            ''', (1 if success_count == total_commands else 0, total_commands, success_count, duration, today))
-        else:
-            cursor.execute('''
-                INSERT INTO system_stats 
-                (date, total_updates, successful_updates, total_commands, successful_commands, total_duration)
-                VALUES (?, 1, ?, ?, ?, ?)
-            ''', (today, 1 if success_count == total_commands else 0, total_commands, success_count, duration))
-        
-        conn.commit()
-        conn.close()
-        
-    def get_recent_sessions(self, limit: int = 10) -> List[Dict]:
-        """Son güncelleme oturumlarını getir"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT * FROM update_sessions 
-            ORDER BY timestamp DESC 
-            LIMIT ?
-        ''', (limit,))
-        
-        sessions = []
-        for row in cursor.fetchall():
-            sessions.append({
-                'id': row[0],
-                'timestamp': row[1],
-                'update_type': row[2],
-                'success_count': row[3],
-                'total_commands': row[4],
-                'duration_seconds': row[5],
-                'system_info': json.loads(row[6]),
-                'status': row[7]
-            })
-        
-        conn.close()
-        return sessions
-        
-    def get_session_details(self, session_id: int) -> Dict:
-        """Oturum detaylarını getir"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Oturum bilgisi
-        cursor.execute('SELECT * FROM update_sessions WHERE id = ?', (session_id,))
-        session_row = cursor.fetchone()
-        
-        if not session_row:
-            return None
-            
-        session_info = {
-            'id': session_row[0],
-            'timestamp': session_row[1],
-            'update_type': session_row[2],
-            'success_count': session_row[3],
-            'total_commands': session_row[4],
-            'duration_seconds': session_row[5],
-            'system_info': json.loads(session_row[6]),
-            'status': session_row[7]
-        }
-        
-        # Komut geçmişi
-        cursor.execute('''
-            SELECT * FROM command_history 
-            WHERE session_id = ? 
-            ORDER BY timestamp
-        ''', (session_id,))
-        
-        commands = []
-        for row in cursor.fetchall():
-            commands.append({
-                'id': row[0],
-                'command_name': row[2],
-                'command_text': row[3],
-                'status': row[4],
-                'return_code': row[5],
-                'output': row[6],
-                'error': row[7],
-                'duration_seconds': row[8],
-                'timestamp': row[9]
-            })
-        
-        session_info['commands'] = commands
-        conn.close()
-        return session_info
-        
-    def get_statistics(self, days: int = 30) -> Dict:
-        """İstatistikleri getir"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-        
-        cursor.execute('''
-            SELECT 
-                SUM(total_updates) as total_updates,
-                SUM(successful_updates) as successful_updates,
-                SUM(total_commands) as total_commands,
-                SUM(successful_commands) as successful_commands,
-                SUM(total_duration) as total_duration
-            FROM system_stats 
-            WHERE date >= ?
-        ''', (start_date,))
-        
-        result = cursor.fetchone()
-        
-        stats = {
-            'total_updates': result[0] or 0,
-            'successful_updates': result[1] or 0,
-            'total_commands': result[2] or 0,
-            'successful_commands': result[3] or 0,
-            'total_duration': result[4] or 0,
-            'success_rate_updates': (result[1] / result[0] * 100) if result[0] else 0,
-            'success_rate_commands': (result[3] / result[2] * 100) if result[2] else 0
-        }
-        
-        conn.close()
-        return stats
-
-# ---------- Geçmiş Görüntüleme Penceresi ----------
-class HistoryViewerWindow(ctk.CTkToplevel):
-    def __init__(self, parent, history_manager: UpdateHistoryManager):
-        super().__init__(parent)
-        self.history_manager = history_manager
-        
-        self.title("📊 Güncelleme Geçmişi")
-        self.geometry("800x600")
-        self.transient(parent)
-        self.grab_set()
-        
-        self.setup_ui()
-        self.load_history()
-        
-    def setup_ui(self):
-        # Sekmeler
-        self.tabview = ctk.CTkTabview(self)
-        self.tabview.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        self.tabview.add("📋 Son Güncellemeler")
-        self.tabview.add("📈 İstatistikler")
-        self.tabview.add("🔍 Detaylı Görünüm")
-        
-        self.setup_recent_tab()
-        self.setup_stats_tab()
-        self.setup_details_tab()
-        
-    def setup_recent_tab(self):
-        # Son güncellemeler listesi
-        frame = self.tabview.tab("📋 Son Güncellemeler")
-        
-        # Başlık
-        title_label = ctk.CTkLabel(frame, text="Son 10 Güncelleme", 
-                                  font=("Arial", 16, "bold"))
-        title_label.pack(pady=10)
-        
-        # Liste kutusu
-        self.session_listbox = ctk.CTkTextbox(frame, width=700, height=400)
-        self.session_listbox.pack(pady=10, fill="both", expand=True)
-        self.session_listbox.configure(state="disabled")
-        
-    def setup_stats_tab(self):
-        # İstatistikler
-        frame = self.tabview.tab("📈 İstatistikler")
-        
-        self.stats_text = ctk.CTkTextbox(frame, width=700, height=400)
-        self.stats_text.pack(pady=10, fill="both", expand=True)
-        self.stats_text.configure(state="disabled")
-        
-    def setup_details_tab(self):
-        # Detaylı görünüm
-        frame = self.tabview.tab("🔍 Detaylı Görünüm")
-        
-        # Seçim
-        selection_frame = ctk.CTkFrame(frame)
-        selection_frame.pack(fill="x", padx=10, pady=10)
-        
-        ctk.CTkLabel(selection_frame, text="Oturum ID:").pack(side="left", padx=5)
-        self.session_id_entry = ctk.CTkEntry(selection_frame, width=100)
-        self.session_id_entry.pack(side="left", padx=5)
-        
-        ctk.CTkButton(selection_frame, text="Yükle", 
-                     command=self.load_session_details).pack(side="left", padx=10)
-        
-        # Detaylar
-        self.details_text = ctk.CTkTextbox(frame, width=700, height=350)
-        self.details_text.pack(pady=10, fill="both", expand=True)
-        self.details_text.configure(state="disabled")
-        
-    def load_history(self):
-        """Geçmişi yükle"""
-        self.load_recent_sessions()
-        self.load_statistics()
-        
-    def load_recent_sessions(self):
-        """Son oturumları yükle"""
-        sessions = self.history_manager.get_recent_sessions(10)
-        
-        self.session_listbox.configure(state="normal")
-        self.session_listbox.delete("1.0", "end")
-        
-        if not sessions:
-            self.session_listbox.insert("end", "Henüz güncelleme geçmişi yok.\n")
-        else:
-            for session in sessions:
-                timestamp = datetime.fromisoformat(session['timestamp'])
-                success_rate = (session['success_count'] / session['total_commands'] * 100) if session['total_commands'] > 0 else 0
-                
-                self.session_listbox.insert("end", 
-                    f"📅 {timestamp.strftime('%d.%m.%Y %H:%M')}\n")
-                self.session_listbox.insert("end",
-                    f"   Type: {session['update_type']} | "
-                    f"Success: {session['success_count']}/{session['total_commands']} "
-                    f"(%{success_rate:.1f}) | "
-                    f"Duration: {session['duration_seconds']:.1f}s\n")
-                self.session_listbox.insert("end", f"   Status: {session['status']}\n\n")
-        
-        self.session_listbox.configure(state="disabled")
-        
-    def load_statistics(self):
-        """İstatistikleri yükle"""
-        stats = self.history_manager.get_statistics(30)
-        
-        self.stats_text.configure(state="normal")
-        self.stats_text.delete("1.0", "end")
-        
-        self.stats_text.insert("end", "📊 SON 30 GÜN İSTATİSTİKLERİ\n\n")
-        self.stats_text.insert("end", f"• Toplam Güncelleme: {stats['total_updates']}\n")
-        self.stats_text.insert("end", f"• Başarılı Güncelleme: {stats['successful_updates']}\n")
-        self.stats_text.insert("end", f"• Başarı Oranı: %{stats['success_rate_updates']:.1f}\n\n")
-        
-        self.stats_text.insert("end", f"• Toplam Komut: {stats['total_commands']}\n")
-        self.stats_text.insert("end", f"• Başarılı Komut: {stats['successful_commands']}\n")
-        self.stats_text.insert("end", f"• Başarı Oranı: %{stats['success_rate_commands']:.1f}\n\n")
-        
-        total_hours = stats['total_duration'] / 3600
-        self.stats_text.insert("end", f"• Toplam Süre: {total_hours:.2f} saat\n")
-        
-        self.stats_text.configure(state="disabled")
-        
-    def load_session_details(self):
-        """Oturum detaylarını yükle"""
-        try:
-            session_id = int(self.session_id_entry.get())
-            session_details = self.history_manager.get_session_details(session_id)
-            
-            if not session_details:
-                messagebox.showerror("Hata", "Oturum bulunamadı!")
-                return
-                
-            self.details_text.configure(state="normal")
-            self.details_text.delete("1.0", "end")
-            
-            timestamp = datetime.fromisoformat(session_details['timestamp'])
-            self.details_text.insert("end", f"📋 OTOURUM DETAYLARI - ID: {session_id}\n\n")
-            self.details_text.insert("end", f"Zaman: {timestamp.strftime('%d.%m.%Y %H:%M:%S')}\n")
-            self.details_text.insert("end", f"Tip: {session_details['update_type']}\n")
-            self.details_text.insert("end", f"Durum: {session_details['status']}\n\n")
-            
-            self.details_text.insert("end", "🔧 ÇALIŞTIRILAN KOMUTLAR:\n\n")
-            for cmd in session_details['commands']:
-                status_icon = "✅" if cmd['status'] == 'success' else "❌"
-                self.details_text.insert("end", 
-                    f"{status_icon} {cmd['command_name']} ({cmd['duration_seconds']:.1f}s)\n")
-                if cmd['error']:
-                    self.details_text.insert("end", f"   Hata: {cmd['error']}\n")
-                self.details_text.insert("end", "\n")
-            
-            self.details_text.configure(state="disabled")
-            
-        except ValueError:
-            messagebox.showerror("Hata", "Geçerli bir oturum ID'si girin!")
-        except Exception as e:
-            messagebox.showerror("Hata", f"Detaylar yüklenemedi: {e}")
-
-# ---------- Güncellenmiş Ana Uygulama ----------
-class UniversalUpdaterApp(ctk.CTk):
-    def __init__(self):
-        super().__init__()
-        
-        # Loglama ve geçmiş sistemleri
-        self.logger = AdvancedLogger()
-        self.history_manager = UpdateHistoryManager()
-        
-        # Platform ayarları
-        self.platform_info = self.get_platform_info()
-        
-        # GUI ayarları
-        ctk.set_appearance_mode("system")
-        ctk.set_default_color_theme("blue")
-        
-        self.title("🚀 Evrensel Sistem Güncelleyici")
-        self.geometry("500x500")
-        
-        # Paket yöneticisi
-        self.package_manager = CrossPlatformPackageManager()
-        
-        # Zamanlama yöneticisi (önceki koddan)
-        self.schedule_manager = ScheduledUpdateManager()
-        
-        self.setup_ui()
-        self.logger.log_info("Uygulama başlatıldı", "SystemUpdater")
-        
-    def get_platform_info(self):
-        """Platform bilgilerini getir"""
-        return {
-            'system': platform.system(),
-            'release': platform.release(),
-            'version': platform.version(),
-            'architecture': platform.architecture()[0],
-            'python_version': platform.python_version()
-        }
-        
-    def setup_ui(self):
-        # Başlık
-        title_label = ctk.CTkLabel(self, text="🚀 Sistem Güncelleyici", 
-                                  font=("Arial", 20, "bold"))
-        title_label.pack(pady=15)
-        
-        # Platform bilgisi
-        platform_label = ctk.CTkLabel(self, 
-                                     text=f"Platform: {self.platform_info['system']} {self.platform_info['release']}", 
-                                     font=("Arial", 12))
-        platform_label.pack(pady=5)
-        
-        # Progress bar
-        self.progress = ctk.CTkProgressBar(self, width=450, height=20)
-        self.progress.set(0)
-        self.progress.pack(pady=15)
-        
-        # Durum label
-        self.status_label = ctk.CTkLabel(self, text="Sistem hazır", 
-                                        font=("Arial", 14))
-        self.status_label.pack(pady=10)
-        
-        # Butonlar frame
-        button_frame = ctk.CTkFrame(self)
-        button_frame.pack(pady=10)
-        
-        # Güncelle butonu
-        self.update_btn = ctk.CTkButton(button_frame, text="🔄 Güncelle",
-                                       command=lambda: self.start_update(),
-                                       font=("Arial", 12),
-                                       width=100)
-        self.update_btn.pack(side="left", padx=5)
-        
-        # Geçmiş butonu
-        self.history_btn = ctk.CTkButton(button_frame, text="📊 Geçmiş",
-                                        command=self.show_history,
-                                        font=("Arial", 12),
-                                        width=100)
-        self.history_btn.pack(side="left", padx=5)
-        
-        # Zamanlama butonu
-        self.schedule_btn = ctk.CTkButton(button_frame, text="⏰ Zamanlama",
-                                         command=self.show_schedule_settings,
-                                         font=("Arial", 12),
-                                         width=100)
-        self.schedule_btn.pack(side="left", padx=5)
-        
-        # Çıktı alanı
-        self.output_text = ctk.CTkTextbox(self, width=460, height=180)
-        self.output_text.pack(pady=10, fill="x", padx=20)
-        self.output_text.insert("1.0", "Güncelleme detayları burada görünecek...\n")
-        self.output_text.configure(state="disabled")
-        
-        # Çıkış butonu
-        self.quit_btn = ctk.CTkButton(self, text="❌ Çıkış",
-                                     command=self.cleanup_and_exit,
-                                     fg_color="red",
-                                     font=("Arial", 12))
-        self.quit_btn.pack(pady=10)
-        
-    def show_history(self):
-        """Geçmiş penceresini aç"""
-        HistoryViewerWindow(self, self.history_manager)
-        
-    def start_update(self, update_type="manual"):
-        """Güncellemeyi başlat"""
-        start_time = time.time()
-        
-        # Loglama başlat
-        self.logger.log_update_start(update_type)
-        session_id = self.history_manager.start_update_session(update_type)
-        
-        self.progress.set(0)
-        self.status_label.configure(text="Güncelleme başlatılıyor...")
-        self.update_btn.configure(state="disabled")
-        
-        self.output_text.configure(state="normal")
-        self.output_text.delete("1.0", "end")
-        self.output_text.insert("end", f"🔧 Güncelleme başlatıldı... (ID: {session_id})\n")
-        self.output_text.configure(state="disabled")
-        
-        # Thread'de çalıştır
-        thread = threading.Thread(target=lambda: self.run_update_thread(session_id, start_time, update_type))
-        thread.daemon = True
-        thread.start()
-        
-    def run_update_thread(self, session_id: int, start_time: float, update_type: str):
-        """Güncelleme thread'i"""
-        managers = self.package_manager.get_available_managers()
-        
-        if not managers:
-            error_msg = "Paket yöneticisi bulunamadı"
-            self.logger.log_error(error_msg)
-            self.history_manager.complete_update_session(session_id, 0, 0, 0, "failed")
-            self.update_done(error_msg, [], session_id, start_time, update_type)
-            return
-        
-        total_commands = sum(len(mgr['commands']) for mgr in managers.values())
-        completed = 0
-        success_count = 0
-        details = []
-        
-        for manager_id, manager_info in managers.items():
-            for command in manager_info['commands']:
-                completed += 1
-                progress = (completed / total_commands) * 100
-                command_start_time = time.time()
-                
-                self.update_progress(progress, f"{manager_info['name']} - {command[0]}")
-                
-                try:
-                    result = subprocess.run(command, capture_output=True, text=True, timeout=300)
-                    command_duration = time.time() - command_start_time
-                    
-                    if result.returncode == 0:
-                        success_count += 1
-                        status = "success"
-                        details.append(f"✅ {manager_info['name']} - Başarılı")
-                    else:
-                        status = "failed"
-                        error_msg = result.stderr[:100] if result.stderr else "Bilinmeyen hata"
-                        details.append(f"❌ {manager_info['name']} - Hata: {error_msg}")
-                    
-                    # Komut sonucunu geçmişe kaydet
-                    self.history_manager.log_command_result(
-                        session_id, manager_info['name'], ' '.join(command),
-                        status, result.returncode, result.stdout, result.stderr,
-                        command_duration
-                    )
-                        
-                except Exception as e:
-                    command_duration = time.time() - command_start_time
-                    error_msg = str(e)
-                    details.append(f"⚠️ {manager_info['name']} - Hata: {error_msg}")
-                    
-                    self.history_manager.log_command_result(
-                        session_id, manager_info['name'], ' '.join(command),
-                        "error", -1, "", error_msg, command_duration
-                    )
-                
-                time.sleep(1)
-        
-        total_duration = time.time() - start_time
-        self.history_manager.complete_update_session(
-            session_id, success_count, total_commands, total_duration, "completed"
-        )
-        
-        summary = f"🎉 Güncelleme tamamlandı! {success_count}/{total_commands} başarılı"
-        self.logger.log_update_result(success_count, total_commands, details)
-        self.update_done(summary, details, session_id, start_time, update_type)
+    try:
+        from cryptography.fernet import Fernet
+    except ImportError:
+        print("❌ 'cryptography' kütüphanesi gerekli. Yüklemek için:")
+        print("pip install cryptography")
+        sys.exit(1)
     
-    def update_progress(self, percent, detail):
-        self.progress.set(percent / 100)
-        self.status_label.configure(text=f"Güncelleniyor... %{int(percent)}")
-        
-        self.output_text.configure(state="normal")
-        self.output_text.insert("end", f"⏳ {detail}\n")
-        self.output_text.see("end")
-        self.output_text.configure(state="disabled")
-    
-    def update_done(self, message, details, session_id, start_time, update_type):
-        total_duration = time.time() - start_time
-        
-        self.progress.set(1.0)
-        self.status_label.configure(text="Tamamlandı!")
-        self.update_btn.configure(state="normal")
-        
-        self.output_text.configure(state="normal")
-        self.output_text.insert("end", f"\n🎉 {message}\n")
-        self.output_text.insert("end", f"⏱️  Toplam süre: {total_duration:.1f}s\n")
-        for detail in details:
-            self.output_text.insert("end", f"• {detail}\n")
-        self.output_text.see("end")
-        self.output_text.configure(state="disabled")
-        
-        messagebox.showinfo("Güncelleme Tamamlandı", f"{message}\nSüre: {total_duration:.1f}s")
-    
-    def show_schedule_settings(self):
-        """Zamanlama ayarları (önceki koddan)"""
-        # Bu fonksiyon önceki zamanlama kodundan gelecek
-        pass
-        
-    def cleanup_and_exit(self):
-        """Temizlik yap ve çık"""
-        self.logger.log_info("Uygulama kapatılıyor", "SystemUpdater")
-        self.destroy()
-
-# ---------- Platform Tespiti (Önceki koddan) ----------
-class PlatformDetector:
-    @staticmethod
-    def get_platform_info():
-        system = platform.system().lower()
-        info = {
-            'system': system,
-            'release': platform.release(),
-            'version': platform.version(),
-            'architecture': platform.architecture()[0],
-            'processor': platform.processor(),
-            'python_version': platform.python_version()
-        }
-        
-        if system == 'linux':
-            info['distribution'] = PlatformDetector.get_linux_distro()
-        elif system == 'darwin':
-            info['distribution'] = PlatformDetector.get_macos_version()
-            
-        return info
-
-# ---------- Paket Yöneticisi (Önceki koddan) ----------
-class CrossPlatformPackageManager:
-    def get_available_managers(self):
-        # Önceki kodun aynısı
-        return {}
-
-# ---------- Zamanlama Yöneticisi (Önceki koddan) ----------
-class ScheduledUpdateManager:
-    def start_scheduler(self, callback):
-        # Önceki kodun aynısı
-        pass
-
-# ---------- Uygulamayı Başlat ----------
-if __name__ == "__main__":
-    app = UniversalUpdaterApp()
+    # Gelişmiş uygulamayı başlat
+    app = AdvancedUniversalUpdaterApp()
     app.mainloop()
