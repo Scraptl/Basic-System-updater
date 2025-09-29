@@ -104,11 +104,9 @@ Tüm işletim sistemleri için tek bir güncelleme aracı. Windows, macOS ve Lin
 - 📈 Detaylı raporlama
 
 ### 🖥️ Modern Arayüz / Modern GUI
-- 🎨 Koyuk/Açık tema desteği
-- 🔍 Detaylı sistem bilgileri(no for now)
+- 🎨 Koyu tema desteği
+- 🔍 Detaylı sistem bilgileri
 - 📱 Kullanıcı dostu arayüz
-
----nasıl indirilinir/how to download
 
 üstten
 
@@ -118,13 +116,16 @@ ile indirip .py dosyasını aç
 ---
 
 ## 📦 Kurulum / Installation
+üstten
+
+CODE --> upload files to ZIP
+
+ile indirip ilk gördüğün .py dosyasını aç
+---
 
 ### Yöntem 1: Python ile (Tüm Platformlar)
 # 🚀 Basic system updater -Basit Sistem Güncelleyici
 
-![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
-![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-green)
-![License](https://img.shields.io/badge/License-MIT-yellow)
 
 Tüm işletim sistemleri için tek bir güncelleme aracı. Windows, macOS ve Linux sistemlerde paket yöneticilerini otomatik olarak yönetir.
 
